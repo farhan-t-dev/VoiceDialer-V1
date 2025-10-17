@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Phone, Upload, Tag as TagIcon } from "lucide-react";
+import { Plus, Search, Phone, Upload, Tag as TagIcon, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -10,6 +10,7 @@ import { ContactDetail } from "@/components/contact-detail";
 import { CSVImportDialog } from "@/components/csv-import-dialog";
 import { TagManagerDialog } from "@/components/tag-manager-dialog";
 import type { Contact } from "@shared/schema";
+import { Link } from "wouter";
 
 export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,6 +78,13 @@ export default function Dashboard() {
             />
           </div>
           
+          <Link href="/analytics">
+            <Button variant="outline" data-testid="button-analytics">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analytics
+            </Button>
+          </Link>
+
           <Button 
             variant="outline" 
             onClick={() => setIsTagManagerOpen(true)} 

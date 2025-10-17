@@ -23,6 +23,7 @@ export interface IStorage {
   deleteContact(id: string): Promise<boolean>;
   bulkCreateContacts(contacts: InsertContact[]): Promise<Contact[]>;
   
+  getAllCallHistory(): Promise<CallHistory[]>;
   getCallHistory(contactId: string): Promise<CallHistory[]>;
   createCallHistory(call: InsertCallHistory): Promise<CallHistory>;
 
@@ -65,6 +66,13 @@ export class DatabaseStorage implements IStorage {
   async deleteContact(id: string): Promise<boolean> {
     const result = await db.delete(contacts).where(eq(contacts.id, id));
     return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async getAllCallHistory(): Promise<CallHistory[]> {
+    return await db
+      .select()
+      .from(callHistory)
+      .orderBy(desc(callHistory.calledAt));
   }
 
   async getCallHistory(contactId: string): Promise<CallHistory[]> {

@@ -60,6 +60,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/calls", async (req, res) => {
+    try {
+      const calls = await storage.getAllCallHistory();
+      res.json(calls);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch call history" });
+    }
+  });
+
   app.get("/api/contacts/:id/calls", async (req, res) => {
     try {
       const calls = await storage.getCallHistory(req.params.id);
