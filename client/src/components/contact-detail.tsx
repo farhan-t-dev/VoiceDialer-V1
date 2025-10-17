@@ -239,18 +239,19 @@ export function ContactDetail({ contact, onClose, onEdit }: ContactDetailProps) 
             ) : (
               <div className="space-y-3">
                 {callHistory.map((call) => {
-                  const StatusIcon = statusConfig[call.status].icon;
+                  const status = call.status as keyof typeof statusConfig;
+                  const StatusIcon = statusConfig[status].icon;
                   return (
                     <div
                       key={call.id}
                       className="flex gap-3 p-3 rounded-md border"
                       data-testid={`call-history-${call.id}`}
                     >
-                      <StatusIcon className={`h-5 w-5 mt-0.5 ${statusConfig[call.status].color}`} />
+                      <StatusIcon className={`h-5 w-5 mt-0.5 ${statusConfig[status].color}`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <Badge variant="outline" className="text-xs" data-testid={`badge-status-${call.id}`}>
-                            {statusConfig[call.status].label}
+                            {statusConfig[status].label}
                           </Badge>
                           <span className="text-xs text-muted-foreground" data-testid={`text-call-date-${call.id}`}>
                             {formatDate(call.calledAt)}

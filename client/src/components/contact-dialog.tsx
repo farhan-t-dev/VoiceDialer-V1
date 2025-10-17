@@ -50,9 +50,9 @@ export function ContactDialog({ open, onOpenChange, contact }: ContactDialogProp
       form.reset({
         name: contact.name,
         phone: contact.phone,
-        email: contact.email || "",
-        company: contact.company || "",
-        notes: contact.notes || "",
+        email: contact.email ?? "",
+        company: contact.company ?? "",
+        notes: contact.notes ?? "",
       });
     } else {
       form.reset({

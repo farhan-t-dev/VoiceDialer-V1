@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,15 @@ export default function Dashboard() {
   const { data: contacts, isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
   });
+
+  useEffect(() => {
+    if (selectedContact && contacts) {
+      const updated = contacts.find(c => c.id === selectedContact.id);
+      if (updated) {
+        setSelectedContact(updated);
+      }
+    }
+  }, [contacts, selectedContact]);
 
   const filteredContacts = contacts?.filter((contact) => {
     const query = searchQuery.toLowerCase();

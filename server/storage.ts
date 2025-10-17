@@ -34,8 +34,12 @@ export class MemStorage implements IStorage {
   async createContact(insertContact: InsertContact): Promise<Contact> {
     const id = randomUUID();
     const contact: Contact = {
-      ...insertContact,
       id,
+      name: insertContact.name,
+      phone: insertContact.phone,
+      email: insertContact.email || null,
+      company: insertContact.company || null,
+      notes: insertContact.notes || null,
       createdAt: new Date(),
     };
     this.contacts.set(id, contact);
@@ -74,9 +78,11 @@ export class MemStorage implements IStorage {
   async createCallHistory(insertCall: InsertCallHistory): Promise<CallHistory> {
     const id = randomUUID();
     const call: CallHistory = {
-      ...insertCall,
       id,
+      contactId: insertCall.contactId,
       calledAt: new Date(),
+      notes: insertCall.notes || null,
+      status: insertCall.status,
     };
     this.callHistory.set(id, call);
     return call;
