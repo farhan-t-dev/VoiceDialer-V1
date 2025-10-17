@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertCallHistorySchema, insertTagSchema } from "@shared/schema";
+import { insertContactSchema, insertCallHistorySchema, insertTagSchema, insertCampaignSchema } from "@shared/schema";
 import { automatedDial } from "./google-voice-automation";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -233,6 +233,178 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to remove tag from contact" });
+    }
+  });
+
+  // Campaign routes
+  app.get("/api/campaigns", async (_req, res) => {
+    try {
+      const campaigns = await storage.getAllCampaigns();
+      res.json(campaigns);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch campaigns" });
+    }
+  });
+
+  app.get("/api/campaigns/:id", async (req, res) => {
+    try {
+      const campaign = await storage.getCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.json(campaign);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch campaign" });
+    }
+  });
+
+  app.post("/api/campaigns", async (req, res) => {
+    try {
+      const validated = insertCampaignSchema.parse(req.body);
+      const campaign = await storage.createCampaign(validated);
+      res.status(201).json(campaign);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid campaign data" });
+    }
+  });
+
+  app.patch("/api/campaigns/:id", async (req, res) => {
+    try {
+      const validated = insertCampaignSchema.partial().parse(req.body);
+      const campaign = await storage.updateCampaign(req.params.id, validated);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.json(campaign);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid campaign data" });
+    }
+  });
+
+  app.delete("/api/campaigns/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCampaign(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete campaign" });
+    }
+  });
+
+  app.get("/api/campaigns/:id/contacts", async (req, res) => {
+    try {
+      const campaignContacts = await storage.getCampaignContacts(req.params.id);
+      res.json(campaignContacts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch campaign contacts" });
+    }
+  });
+
+  app.post("/api/campaigns/:id/contacts", async (req, res) => {
+    try {
+      const { contactIds } = req.body;
+      if (!Array.isArray(contactIds)) {
+        return res.status(400).json({ error: "contactIds must be an array" });
+      }
+      await storage.addContactsToCampaign(req.params.id, contactIds);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add contacts to campaign" });
+    }
+  });
+
+  // Bulk dial endpoint - process all contacts in a campaign
+  app.post("/api/campaigns/:id/dial", async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await storage.getCampaign(campaignId);
+      
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      // Get all pending contacts in the campaign
+      const campaignContacts = await storage.getCampaignContacts(campaignId);
+      const pendingContacts = campaignContacts.filter(cc => cc.status === 'pending');
+
+      if (pendingContacts.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: 'No pending contacts to dial',
+          totalProcessed: 0
+        });
+      }
+
+      // Update campaign status to active
+      await storage.updateCampaign(campaignId, { status: 'active' });
+
+      // Process dial requests asynchronously
+      res.json({ 
+        success: true, 
+        message: `Started dialing ${pendingContacts.length} contacts`,
+        totalContacts: pendingContacts.length
+      });
+
+      // Process calls in the background
+      (async () => {
+        for (const cc of pendingContacts) {
+          try {
+            console.log(`Dialing contact ${cc.contact.name} (${cc.contact.phone})`);
+            
+            // Update status to calling
+            await storage.updateCampaignContactStatus(
+              campaignId,
+              cc.contactId,
+              'calling'
+            );
+
+            // Perform the automated dial
+            const success = await automatedDial(cc.contact.phone);
+
+            // Update status based on result
+            const status = success ? 'completed' : 'failed';
+            await storage.updateCampaignContactStatus(
+              campaignId,
+              cc.contactId,
+              status,
+              success ? 'Call completed successfully' : 'Call failed'
+            );
+
+            // Log the call history
+            if (success) {
+              await storage.createCallHistory({
+                contactId: cc.contactId,
+                status: 'completed',
+                notes: `Campaign: ${campaign.name}`,
+              });
+            }
+
+            // Wait 5 seconds between calls to avoid overwhelming the system
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          } catch (error) {
+            console.error(`Failed to dial contact ${cc.contactId}:`, error);
+            await storage.updateCampaignContactStatus(
+              campaignId,
+              cc.contactId,
+              'failed',
+              error instanceof Error ? error.message : 'Unknown error'
+            );
+          }
+        }
+
+        // Mark campaign as completed
+        await storage.updateCampaign(campaignId, { status: 'completed' });
+        console.log(`Campaign ${campaign.name} completed`);
+      })();
+
+    } catch (error) {
+      console.error('Campaign dial failed:', error);
+      res.status(500).json({ 
+        error: 'Failed to start campaign dialing',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
