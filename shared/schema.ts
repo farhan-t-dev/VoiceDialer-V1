@@ -35,6 +35,24 @@ export const contactTags = pgTable("contact_tags", {
   pk: primaryKey({ columns: [table.contactId, table.tagId] }),
 }));
 
+export const campaigns = pgTable("campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default('draft'), // 'draft', 'active', 'completed', 'paused'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const campaignContacts = pgTable("campaign_contacts", {
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default('pending'), // 'pending', 'calling', 'completed', 'failed'
+  calledAt: timestamp("called_at"),
+  notes: text("notes"),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.campaignId, table.contactId] }),
+}));
+
 export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
   createdAt: true,
@@ -61,6 +79,20 @@ export const insertTagSchema = createInsertSchema(tags).omit({
 
 export const insertContactTagSchema = createInsertSchema(contactTags);
 
+export const insertCampaignSchema = createInsertSchema(campaigns).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  name: z.string().min(1, "Campaign name is required"),
+  status: z.enum(['draft', 'active', 'completed', 'paused']).default('draft'),
+});
+
+export const insertCampaignContactSchema = createInsertSchema(campaignContacts).omit({
+  calledAt: true,
+}).extend({
+  status: z.enum(['pending', 'calling', 'completed', 'failed']).default('pending'),
+});
+
 export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type CallHistory = typeof callHistory.$inferSelect;
@@ -69,3 +101,7 @@ export type Tag = typeof tags.$inferSelect;
 export type InsertTag = z.infer<typeof insertTagSchema>;
 export type ContactTag = typeof contactTags.$inferSelect;
 export type InsertContactTag = z.infer<typeof insertContactTagSchema>;
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
+export type CampaignContact = typeof campaignContacts.$inferSelect;
+export type InsertCampaignContact = z.infer<typeof insertCampaignContactSchema>;
