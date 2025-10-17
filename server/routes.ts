@@ -1,0 +1,85 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { insertContactSchema, insertCallHistorySchema } from "@shared/schema";
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  app.get("/api/contacts", async (_req, res) => {
+    try {
+      const contacts = await storage.getAllContacts();
+      res.json(contacts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contacts" });
+    }
+  });
+
+  app.get("/api/contacts/:id", async (req, res) => {
+    try {
+      const contact = await storage.getContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contact" });
+    }
+  });
+
+  app.post("/api/contacts", async (req, res) => {
+    try {
+      const validated = insertContactSchema.parse(req.body);
+      const contact = await storage.createContact(validated);
+      res.status(201).json(contact);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid contact data" });
+    }
+  });
+
+  app.patch("/api/contacts/:id", async (req, res) => {
+    try {
+      const validated = insertContactSchema.parse(req.body);
+      const contact = await storage.updateContact(req.params.id, validated);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid contact data" });
+    }
+  });
+
+  app.delete("/api/contacts/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteContact(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete contact" });
+    }
+  });
+
+  app.get("/api/contacts/:id/calls", async (req, res) => {
+    try {
+      const calls = await storage.getCallHistory(req.params.id);
+      res.json(calls);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch call history" });
+    }
+  });
+
+  app.post("/api/calls", async (req, res) => {
+    try {
+      const validated = insertCallHistorySchema.parse(req.body);
+      const call = await storage.createCallHistory(validated);
+      res.status(201).json(call);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid call data" });
+    }
+  });
+
+  const httpServer = createServer(app);
+
+  return httpServer;
+}
