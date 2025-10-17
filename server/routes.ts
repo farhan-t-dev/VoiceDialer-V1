@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertContactSchema, insertCallHistorySchema, insertTagSchema } from "@shared/schema";
+import { automatedDial } from "./google-voice-automation";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contacts", async (_req, res) => {
@@ -85,6 +86,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(call);
     } catch (error) {
       res.status(400).json({ error: "Invalid call data" });
+    }
+  });
+
+  app.post("/api/dial/automated", async (req, res) => {
+    try {
+      const { contactId, phoneNumber } = req.body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ error: "Phone number is required" });
+      }
+
+      console.log(`Initiating automated dial for ${phoneNumber}`);
+      
+      // Perform the automated dial
+      const success = await automatedDial(phoneNumber);
+      
+      if (success && contactId) {
+        // Automatically log the call as completed
+        const call = await storage.createCallHistory({
+          contactId,
+          status: 'completed',
+          notes: 'Automated dial initiated',
+        });
+        
+        return res.json({ 
+          success: true, 
+          message: 'Call initiated successfully',
+          call 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        message: 'Call initiated successfully' 
+      });
+    } catch (error) {
+      console.error('Automated dial failed:', error);
+      res.status(500).json({ 
+        error: 'Failed to initiate automated dial',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
