@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Phone, Upload, Tag as TagIcon, BarChart3 } from "lucide-react";
+import { Plus, Search, Phone, Upload, Tag as TagIcon, BarChart3, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -78,6 +78,13 @@ export default function Dashboard() {
             />
           </div>
           
+          <Link href="/campaigns">
+            <Button variant="outline" data-testid="button-campaigns">
+              <Users className="h-4 w-4 mr-2" />
+              Campaigns
+            </Button>
+          </Link>
+
           <Link href="/analytics">
             <Button variant="outline" data-testid="button-analytics">
               <BarChart3 className="h-4 w-4 mr-2" />
