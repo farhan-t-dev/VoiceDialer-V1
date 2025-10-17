@@ -176,7 +176,7 @@ Preferred communication style: Simple, everyday language.
 - **Bulk Campaign Dialing**
   - Sequential processing: one call at a time
   - AI agent optional - falls back to simple dial without audio
-  - 5-second delay between calls
+  - 5-minute delay between calls
   - Audio handler lifecycle: start → capture → process → cleanup
   - Proper resource cleanup in try-finally blocks
 

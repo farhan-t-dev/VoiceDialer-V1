@@ -554,8 +554,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               success ? 'Call completed successfully' : 'Call failed'
             );
 
-              // Wait 5 seconds between calls to avoid overwhelming the system
-              await new Promise(resolve => setTimeout(resolve, 5000));
+              // Wait 5 minutes between calls to avoid overwhelming the system
+              await new Promise(resolve => setTimeout(resolve, 300000));
             } catch (error) {
               console.error(`Failed to dial contact ${cc.contactId}:`, error);
               await storage.updateCampaignContactStatus(
