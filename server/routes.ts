@@ -10,7 +10,9 @@ import {
   insertCallRecordingSchema,
   insertConversationTranscriptSchema
 } from "@shared/schema";
-import { automatedDial } from "./google-voice-automation";
+import { automatedDial, getDialer, closeDialer } from "./google-voice-automation";
+import { AudioStreamHandler } from "./audio-handler";
+import { getWindowsAudioDevices } from "./audio-config";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contacts", async (_req, res) => {
@@ -468,8 +470,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Process calls in the background
       (async () => {
-        for (const cc of pendingContacts) {
-          try {
+        let aiAgent = null;
+        let audioDevices = null;
+        let dialer = null;
+
+        try {
+          // Check if campaign has AI agent assigned
+          if (campaign.agentId) {
+            aiAgent = await storage.getAiAgent(campaign.agentId);
+            console.log(`Campaign using AI Agent: ${aiAgent?.name}`);
+          }
+
+          // Initialize dialer with audio devices if AI agent is present
+          if (aiAgent && process.env.ELEVENLABS_API_KEY) {
+            audioDevices = getWindowsAudioDevices();
+            dialer = await getDialer(audioDevices.captureDevice, audioDevices.playbackDevice);
+          }
+
+          for (const cc of pendingContacts) {
+            let audioHandler: AudioStreamHandler | null = null;
+            let callHistoryId: string | null = null;
+
+            try {
             console.log(`Dialing contact ${cc.contact.name} (${cc.contact.phone})`);
             
             // Update status to calling
@@ -480,7 +502,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
             );
 
             // Perform the automated dial
-            const success = await automatedDial(cc.contact.phone);
+            let success = false;
+            if (dialer) {
+              // Use dialer with audio support
+              success = await dialer.dialNumber(cc.contact.phone);
+            } else {
+              // Use simple automated dial
+              success = await automatedDial(cc.contact.phone);
+            }
+
+            // Create call history record
+            if (success) {
+              const callHistory = await storage.createCallHistory({
+                contactId: cc.contactId,
+                status: 'completed',
+                notes: `Campaign: ${campaign.name}`,
+              });
+              callHistoryId = callHistory.id;
+
+              // Start audio processing if AI agent is assigned
+              if (aiAgent && aiAgent.voiceId && dialer && process.env.ELEVENLABS_API_KEY) {
+                const page = dialer.getPage();
+                if (page) {
+                  const callId = `call_${Date.now()}_${cc.contactId}`;
+                  
+                  audioHandler = new AudioStreamHandler(page, {
+                    elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
+                    voiceId: aiAgent.voiceId || '',
+                    agentPersonality: aiAgent.personality || '',
+                    conversationScript: aiAgent.conversationScript || '',
+                    greeting: aiAgent.greeting || undefined,
+                    objectionHandling: aiAgent.objectionHandling || undefined,
+                    closingScript: aiAgent.closingScript || undefined,
+                  }, callId);
+
+                  await audioHandler.startAudioCapture();
+                  console.log(`AI audio processing started for call ${callId}`);
+
+                  // Wait for call duration (30 seconds as example)
+                  await new Promise(resolve => setTimeout(resolve, 30000));
+
+                  // Stop audio capture
+                  await audioHandler.stopCapture();
+
+                  // Save recording
+                  const recordingPath = audioHandler.getRecordingPath();
+                  if (callHistoryId) {
+                    await storage.createCallRecording({
+                      callHistoryId: callHistoryId,
+                      recordingUrl: recordingPath,
+                      duration: "30",
+                    });
+
+                    // Save transcript
+                    const transcript = audioHandler.getTranscript();
+                    for (const turn of transcript) {
+                      await storage.createConversationTranscript({
+                        callHistoryId: callHistoryId,
+                        speaker: turn.speaker,
+                        message: turn.message,
+                      });
+                    }
+                  }
+
+                  console.log(`Recording and transcript saved for call ${callId}`);
+                }
+              }
+            }
 
             // Update status based on result
             const status = success ? 'completed' : 'failed';
@@ -491,31 +579,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
               success ? 'Call completed successfully' : 'Call failed'
             );
 
-            // Log the call history
-            if (success) {
-              await storage.createCallHistory({
-                contactId: cc.contactId,
-                status: 'completed',
-                notes: `Campaign: ${campaign.name}`,
-              });
+              // Wait 5 seconds between calls to avoid overwhelming the system
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            } catch (error) {
+              console.error(`Failed to dial contact ${cc.contactId}:`, error);
+              await storage.updateCampaignContactStatus(
+                campaignId,
+                cc.contactId,
+                'failed',
+                error instanceof Error ? error.message : 'Unknown error'
+              );
+            } finally {
+              // Clean up audio handler for this call
+              if (audioHandler) {
+                await audioHandler.cleanup();
+              }
             }
-
-            // Wait 5 seconds between calls to avoid overwhelming the system
-            await new Promise(resolve => setTimeout(resolve, 5000));
-          } catch (error) {
-            console.error(`Failed to dial contact ${cc.contactId}:`, error);
-            await storage.updateCampaignContactStatus(
-              campaignId,
-              cc.contactId,
-              'failed',
-              error instanceof Error ? error.message : 'Unknown error'
-            );
           }
-        }
+        } finally {
+          // Close dialer if we created one
+          if (dialer) {
+            await closeDialer();
+          }
 
-        // Mark campaign as completed
-        await storage.updateCampaign(campaignId, { status: 'completed' });
-        console.log(`Campaign ${campaign.name} completed`);
+          // Mark campaign as completed
+          await storage.updateCampaign(campaignId, { status: 'completed' });
+          console.log(`Campaign ${campaign.name} completed`);
+        }
       })();
 
     } catch (error) {

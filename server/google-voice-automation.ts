@@ -15,27 +15,49 @@ class GoogleVoiceDialer {
     this.config = config;
   }
 
-  async initialize() {
+  async initialize(audioInputDevice?: string, audioOutputDevice?: string) {
     try {
+      const launchArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--use-fake-ui-for-media-stream',
+        '--autoplay-policy=no-user-gesture-required',
+        '--enable-features=VaapiVideoDecoder'
+      ];
+
+      if (audioInputDevice) {
+        launchArgs.push(`--use-fake-device-for-media-stream`);
+        launchArgs.push(`--audio-input-device=${audioInputDevice}`);
+      }
+
+      if (audioOutputDevice) {
+        launchArgs.push(`--audio-output-device=${audioOutputDevice}`);
+      }
+
       this.browser = await chromium.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled'
-        ]
+        headless: audioInputDevice || audioOutputDevice ? false : true,
+        args: launchArgs
       });
 
       this.page = await this.browser.newPage();
+
+      const context = this.page.context();
+      await context.grantPermissions(['microphone', 'camera', 'speaker'], { 
+        origin: 'https://voice.google.com' 
+      });
       
-      // Set viewport and user agent to appear more human-like
       await this.page.setViewportSize({ width: 1280, height: 720 });
       await this.page.setExtraHTTPHeaders({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
       });
 
-      console.log('Browser initialized successfully');
+      console.log('Browser initialized successfully', {
+        audioInput: audioInputDevice || 'none',
+        audioOutput: audioOutputDevice || 'none',
+        headless: audioInputDevice || audioOutputDevice ? false : true
+      });
     } catch (error) {
       console.error('Failed to initialize browser:', error);
       throw error;
@@ -150,6 +172,10 @@ class GoogleVoiceDialer {
     }
   }
 
+  getPage(): Page | null {
+    return this.page;
+  }
+
   async close() {
     if (this.browser) {
       await this.browser.close();
@@ -171,7 +197,7 @@ class GoogleVoiceDialer {
 // Singleton instance
 let dialerInstance: GoogleVoiceDialer | null = null;
 
-export async function getDialer(): Promise<GoogleVoiceDialer> {
+export async function getDialer(audioInputDevice?: string, audioOutputDevice?: string): Promise<GoogleVoiceDialer> {
   const email = process.env.GOOGLE_VOICE_EMAIL;
   const password = process.env.GOOGLE_VOICE_PASSWORD;
 
@@ -181,7 +207,7 @@ export async function getDialer(): Promise<GoogleVoiceDialer> {
 
   if (!dialerInstance) {
     dialerInstance = new GoogleVoiceDialer({ email, password });
-    await dialerInstance.initialize();
+    await dialerInstance.initialize(audioInputDevice, audioOutputDevice);
     await dialerInstance.login();
   }
 
