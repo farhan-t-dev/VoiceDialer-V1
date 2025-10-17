@@ -16,10 +16,13 @@ Preferred communication style: Simple, everyday language.
 - React 18+ with TypeScript for type-safe component development
 - Vite as the build tool and development server
 - Wouter for lightweight client-side routing with multiple pages:
-  - Dashboard (/) - Main contact management interface
-  - Campaigns (/campaigns) - Campaign list and creation
+  - Home (/) - Dashboard overview with stats and quick actions
+  - Contacts (/contacts) - Full contact management interface with CSV import and tagging
+  - Campaigns (/campaigns) - Campaign list and creation with AI agent integration
   - Campaign Detail (/campaigns/:id) - Individual campaign management with contact selection and bulk dialing
+  - AI Agents (/agents) - Manage AI agent profiles for automated conversations
   - Analytics (/analytics) - Call history analytics and reporting
+  - Settings (/settings) - Configure ElevenLabs and Google Voice credentials
 
 **UI Component System**
 - Shadcn UI component library (New York variant) with Radix UI primitives
@@ -55,10 +58,13 @@ Preferred communication style: Simple, everyday language.
 
 **API Design**
 - RESTful endpoints for contacts CRUD operations (`/api/contacts`)
-- Call history tracking endpoints (`/api/call-history`)
+- Call history tracking endpoints (`/api/calls`)
 - Campaign management endpoints (`/api/campaigns`) for creating and managing bulk calling campaigns
 - Campaign contact endpoints (`/api/campaigns/:id/contacts`) for adding contacts to campaigns
 - Bulk automated dialing endpoint (`/api/campaigns/:id/dial`) for executing campaigns
+- AI Agent CRUD endpoints (`/api/agents`) for managing conversation profiles
+- Call recording endpoints (`/api/calls/:id/recording`) for storing audio recordings
+- Conversation transcript endpoints (`/api/calls/:id/transcripts`) for AI conversation logs
 - Validation using Zod schemas at API boundaries
 - Consistent error handling with status codes and JSON error responses
 - Asynchronous background processing for bulk dialing operations
@@ -82,8 +88,9 @@ Preferred communication style: Simple, everyday language.
 - Visual indicators with color-coded icons per status type
 
 **Campaign Entity**
-- Core fields: id (UUID), name (required), description, status, createdAt
+- Core fields: id (UUID), name (required), description, agentId (optional), status, createdAt
 - Status states: draft, active, completed, paused
+- Links to AI Agent for automated conversation handling
 - Many-to-many relationship with contacts via junction table
 - Enables bulk calling operations with centralized management
 
@@ -92,6 +99,22 @@ Preferred communication style: Simple, everyday language.
 - Per-contact status: pending, calling, completed, failed
 - Timestamp tracking (calledAt) and notes for each campaign contact
 - Cascading deletes when campaign or contact is removed
+
+**AI Agent Entity**
+- Core fields: id (UUID), name, personality, voiceId (ElevenLabs), conversationScript
+- Additional fields: greeting, objectionHandling, closingScript, isActive, createdAt
+- Defines AI behavior and conversation flow for automated calls
+- Can be assigned to campaigns for AI-powered conversations
+
+**Call Recording Entity**
+- Links to call history with recording URL and duration
+- Stores audio recordings of calls for playback and analysis
+- Cascading delete when call history is removed
+
+**Conversation Transcript Entity**
+- Links to call history with speaker (agent/contact) and message
+- Timestamp tracking for conversation flow
+- Enables transcript review and conversation analysis
 
 ### External Dependencies
 
@@ -124,6 +147,14 @@ Preferred communication style: Simple, everyday language.
 - Bulk campaign dialing with sequential processing and status tracking
 - Requires GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD environment variables
 - 5-second delay between calls to prevent system overload
+
+**ElevenLabs Speech-to-Speech Integration (Planned)**
+- AI-powered voice conversations during automated calls
+- Speech-to-speech API for real-time conversation handling
+- Voice customization using ElevenLabs voice IDs in AI agent profiles
+- Requires ELEVENLABS_API_KEY environment variable
+- Settings page provides credential configuration interface
+- Integration pending: Full implementation with Google Voice automation
 
 ### Key Architectural Patterns
 

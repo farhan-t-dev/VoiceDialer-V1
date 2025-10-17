@@ -9,14 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertCampaignSchema, type Campaign } from "@shared/schema";
+import { insertCampaignSchema, type Campaign, type AiAgent } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 
 const formSchema = insertCampaignSchema.extend({
   name: z.string().min(1, "Campaign name is required"),
@@ -114,6 +115,12 @@ function CampaignCard({ campaign, onSelect }: { campaign: Campaign; onSelect: (i
 function CreateCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { toast } = useToast();
 
+  const { data: agents } = useQuery<AiAgent[]>({
+    queryKey: ["/api/agents"],
+  });
+
+  const activeAgents = agents?.filter(a => a.isActive === 'true') || [];
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -187,6 +194,40 @@ function CreateCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                       data-testid="input-campaign-description"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="agentId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>AI Agent (Optional)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || ""}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-agent">
+                        <SelectValue placeholder="Select an AI agent for automated conversations" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="">No AI Agent</SelectItem>
+                      {activeAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id} data-testid={`option-agent-${agent.id}`}>
+                          {agent.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    {activeAgents.length === 0 ? (
+                      <Link href="/agents" className="text-primary hover:underline">
+                        Create an AI agent first
+                      </Link>
+                    ) : (
+                      "AI agent will conduct automated conversations during calls"
+                    )}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

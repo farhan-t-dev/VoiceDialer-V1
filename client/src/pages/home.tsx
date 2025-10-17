@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Users, BarChart3, PhoneCall, TrendingUp } from "lucide-react";
+import { Phone, Users, BarChart3, PhoneCall, TrendingUp, Bot, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -52,10 +52,22 @@ export default function Home() {
               Campaigns
             </Button>
           </Link>
+          <Link href="/agents">
+            <Button variant="outline" data-testid="button-agents">
+              <Bot className="h-4 w-4 mr-2" />
+              AI Agents
+            </Button>
+          </Link>
           <Link href="/analytics">
             <Button variant="outline" data-testid="button-analytics">
               <BarChart3 className="h-4 w-4 mr-2" />
               Analytics
+            </Button>
+          </Link>
+          <Link href="/settings">
+            <Button variant="outline" data-testid="button-settings">
+              <SettingsIcon className="h-4 w-4 mr-2" />
+              Settings
             </Button>
           </Link>
           <ThemeToggle />

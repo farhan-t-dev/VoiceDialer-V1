@@ -1,7 +1,15 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertCallHistorySchema, insertTagSchema, insertCampaignSchema } from "@shared/schema";
+import { 
+  insertContactSchema, 
+  insertCallHistorySchema, 
+  insertTagSchema, 
+  insertCampaignSchema,
+  insertAiAgentSchema,
+  insertCallRecordingSchema,
+  insertConversationTranscriptSchema
+} from "@shared/schema";
 import { automatedDial } from "./google-voice-automation";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -242,6 +250,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to remove tag from contact" });
+    }
+  });
+
+  // AI Agent routes
+  app.get("/api/agents", async (_req, res) => {
+    try {
+      const agents = await storage.getAllAiAgents();
+      res.json(agents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch AI agents" });
+    }
+  });
+
+  app.get("/api/agents/:id", async (req, res) => {
+    try {
+      const agent = await storage.getAiAgent(req.params.id);
+      if (!agent) {
+        return res.status(404).json({ error: "AI agent not found" });
+      }
+      res.json(agent);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch AI agent" });
+    }
+  });
+
+  app.post("/api/agents", async (req, res) => {
+    try {
+      const validated = insertAiAgentSchema.parse(req.body);
+      const agent = await storage.createAiAgent(validated);
+      res.status(201).json(agent);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid AI agent data" });
+    }
+  });
+
+  app.patch("/api/agents/:id", async (req, res) => {
+    try {
+      const validated = insertAiAgentSchema.partial().parse(req.body);
+      const agent = await storage.updateAiAgent(req.params.id, validated);
+      if (!agent) {
+        return res.status(404).json({ error: "AI agent not found" });
+      }
+      res.json(agent);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid AI agent data" });
+    }
+  });
+
+  app.delete("/api/agents/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteAiAgent(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "AI agent not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete AI agent" });
+    }
+  });
+
+  // Call Recording and Transcript routes
+  app.get("/api/calls/:id/recording", async (req, res) => {
+    try {
+      const recording = await storage.getCallRecording(req.params.id);
+      res.json(recording);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch call recording" });
+    }
+  });
+
+  app.post("/api/calls/:id/recording", async (req, res) => {
+    try {
+      const validated = insertCallRecordingSchema.parse({
+        ...req.body,
+        callHistoryId: req.params.id,
+      });
+      const recording = await storage.createCallRecording(validated);
+      res.status(201).json(recording);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid recording data" });
+    }
+  });
+
+  app.get("/api/calls/:id/transcripts", async (req, res) => {
+    try {
+      const transcripts = await storage.getConversationTranscripts(req.params.id);
+      res.json(transcripts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch transcripts" });
+    }
+  });
+
+  app.post("/api/calls/:id/transcripts", async (req, res) => {
+    try {
+      const validated = insertConversationTranscriptSchema.parse({
+        ...req.body,
+        callHistoryId: req.params.id,
+      });
+      const transcript = await storage.createConversationTranscript(validated);
+      res.status(201).json(transcript);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid transcript data" });
     }
   });
 

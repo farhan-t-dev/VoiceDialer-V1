@@ -5,6 +5,9 @@ import {
   contactTags,
   campaigns,
   campaignContacts,
+  aiAgents,
+  callRecordings,
+  conversationTranscripts,
   type Contact, 
   type InsertContact, 
   type CallHistory, 
@@ -16,7 +19,13 @@ import {
   type Campaign,
   type InsertCampaign,
   type CampaignContact,
-  type InsertCampaignContact
+  type InsertCampaignContact,
+  type AiAgent,
+  type InsertAiAgent,
+  type CallRecording,
+  type InsertCallRecording,
+  type ConversationTranscript,
+  type InsertConversationTranscript
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -55,6 +64,18 @@ export interface IStorage {
     status: 'pending' | 'calling' | 'completed' | 'failed', 
     notes?: string
   ): Promise<void>;
+
+  getAllAiAgents(): Promise<AiAgent[]>;
+  getAiAgent(id: string): Promise<AiAgent | undefined>;
+  createAiAgent(agent: InsertAiAgent): Promise<AiAgent>;
+  updateAiAgent(id: string, agent: Partial<InsertAiAgent>): Promise<AiAgent | undefined>;
+  deleteAiAgent(id: string): Promise<boolean>;
+
+  getCallRecording(callHistoryId: string): Promise<CallRecording | undefined>;
+  createCallRecording(recording: InsertCallRecording): Promise<CallRecording>;
+
+  getConversationTranscripts(callHistoryId: string): Promise<ConversationTranscript[]>;
+  createConversationTranscript(transcript: InsertConversationTranscript): Promise<ConversationTranscript>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -247,6 +268,69 @@ export class DatabaseStorage implements IStorage {
           eq(campaignContacts.contactId, contactId)
         )
       );
+  }
+
+  async getAllAiAgents(): Promise<AiAgent[]> {
+    return await db.select().from(aiAgents).orderBy(desc(aiAgents.createdAt));
+  }
+
+  async getAiAgent(id: string): Promise<AiAgent | undefined> {
+    const [agent] = await db.select().from(aiAgents).where(eq(aiAgents.id, id));
+    return agent || undefined;
+  }
+
+  async createAiAgent(insertAgent: InsertAiAgent): Promise<AiAgent> {
+    const [agent] = await db
+      .insert(aiAgents)
+      .values(insertAgent)
+      .returning();
+    return agent;
+  }
+
+  async updateAiAgent(id: string, updates: Partial<InsertAiAgent>): Promise<AiAgent | undefined> {
+    const [updated] = await db
+      .update(aiAgents)
+      .set(updates)
+      .where(eq(aiAgents.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAiAgent(id: string): Promise<boolean> {
+    const result = await db.delete(aiAgents).where(eq(aiAgents.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async getCallRecording(callHistoryId: string): Promise<CallRecording | undefined> {
+    const [recording] = await db
+      .select()
+      .from(callRecordings)
+      .where(eq(callRecordings.callHistoryId, callHistoryId));
+    return recording || undefined;
+  }
+
+  async createCallRecording(insertRecording: InsertCallRecording): Promise<CallRecording> {
+    const [recording] = await db
+      .insert(callRecordings)
+      .values(insertRecording)
+      .returning();
+    return recording;
+  }
+
+  async getConversationTranscripts(callHistoryId: string): Promise<ConversationTranscript[]> {
+    return await db
+      .select()
+      .from(conversationTranscripts)
+      .where(eq(conversationTranscripts.callHistoryId, callHistoryId))
+      .orderBy(conversationTranscripts.timestamp);
+  }
+
+  async createConversationTranscript(insertTranscript: InsertConversationTranscript): Promise<ConversationTranscript> {
+    const [transcript] = await db
+      .insert(conversationTranscripts)
+      .values(insertTranscript)
+      .returning();
+    return transcript;
   }
 }
 
