@@ -102,7 +102,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Perform the automated dial
       const success = await automatedDial(phoneNumber);
       
-      if (success && contactId) {
+      if (!success) {
+        return res.status(500).json({ 
+          success: false,
+          error: 'Automated dial failed',
+          message: 'Failed to complete the dial sequence'
+        });
+      }
+
+      if (contactId) {
         // Automatically log the call as completed
         const call = await storage.createCallHistory({
           contactId,
@@ -124,6 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Automated dial failed:', error);
       res.status(500).json({ 
+        success: false,
         error: 'Failed to initiate automated dial',
         message: error instanceof Error ? error.message : 'Unknown error'
       });

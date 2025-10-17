@@ -49,7 +49,12 @@ export interface IStorage {
   
   getCampaignContacts(campaignId: string): Promise<(CampaignContact & { contact: Contact })[]>;
   addContactsToCampaign(campaignId: string, contactIds: string[]): Promise<void>;
-  updateCampaignContactStatus(campaignId: string, contactId: string, status: string, notes?: string): Promise<void>;
+  updateCampaignContactStatus(
+    campaignId: string, 
+    contactId: string, 
+    status: 'pending' | 'calling' | 'completed' | 'failed', 
+    notes?: string
+  ): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -223,7 +228,12 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async updateCampaignContactStatus(campaignId: string, contactId: string, status: string, notes?: string): Promise<void> {
+  async updateCampaignContactStatus(
+    campaignId: string, 
+    contactId: string, 
+    status: 'pending' | 'calling' | 'completed' | 'failed', 
+    notes?: string
+  ): Promise<void> {
     await db
       .update(campaignContacts)
       .set({

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A web-based contact management and click-to-call dashboard designed for Google Voice integration. The application provides a clean, utility-focused interface for managing contacts, tracking call history, and initiating calls through Google Voice with a single click. Built with a focus on efficiency and rapid workflow execution.
+A web-based contact management and automated calling platform designed for Google Voice Business integration. The application provides a comprehensive interface for managing contacts, creating bulk calling campaigns, and executing automated dialing sequences. Built with a focus on efficiency, automation, and campaign-driven outreach workflows.
 
 ## User Preferences
 
@@ -15,7 +15,11 @@ Preferred communication style: Simple, everyday language.
 **Framework & Build System**
 - React 18+ with TypeScript for type-safe component development
 - Vite as the build tool and development server
-- Wouter for lightweight client-side routing (single-page application with Dashboard and NotFound routes)
+- Wouter for lightweight client-side routing with multiple pages:
+  - Dashboard (/) - Main contact management interface
+  - Campaigns (/campaigns) - Campaign list and creation
+  - Campaign Detail (/campaigns/:id) - Individual campaign management with contact selection and bulk dialing
+  - Analytics (/analytics) - Call history analytics and reporting
 
 **UI Component System**
 - Shadcn UI component library (New York variant) with Radix UI primitives
@@ -52,8 +56,12 @@ Preferred communication style: Simple, everyday language.
 **API Design**
 - RESTful endpoints for contacts CRUD operations (`/api/contacts`)
 - Call history tracking endpoints (`/api/call-history`)
+- Campaign management endpoints (`/api/campaigns`) for creating and managing bulk calling campaigns
+- Campaign contact endpoints (`/api/campaigns/:id/contacts`) for adding contacts to campaigns
+- Bulk automated dialing endpoint (`/api/campaigns/:id/dial`) for executing campaigns
 - Validation using Zod schemas at API boundaries
 - Consistent error handling with status codes and JSON error responses
+- Asynchronous background processing for bulk dialing operations
 
 **Development Workflow**
 - Hot module replacement (HMR) in development via Vite middleware
@@ -72,6 +80,18 @@ Preferred communication style: Simple, everyday language.
 - Status tracking: completed, missed, voicemail, busy
 - Timestamp (calledAt) and optional notes per call
 - Visual indicators with color-coded icons per status type
+
+**Campaign Entity**
+- Core fields: id (UUID), name (required), description, status, createdAt
+- Status states: draft, active, completed, paused
+- Many-to-many relationship with contacts via junction table
+- Enables bulk calling operations with centralized management
+
+**Campaign Contacts Junction Table**
+- Links campaigns to contacts with individual call tracking
+- Per-contact status: pending, calling, completed, failed
+- Timestamp tracking (calledAt) and notes for each campaign contact
+- Cascading deletes when campaign or contact is removed
 
 ### External Dependencies
 
@@ -98,9 +118,12 @@ Preferred communication style: Simple, everyday language.
 - tsx for TypeScript execution in development
 
 **Google Voice Integration**
-- Client-side URL generation for Google Voice web dialer (`getGoogleVoiceDialUrl` utility)
-- Click-to-call functionality via external link opening
-- No server-side Google Voice API integration (browser-based workflow)
+- Playwright-based browser automation for Google Voice Business (`google-voice-automation.ts`)
+- Automated login and dialing without manual browser interaction
+- Server-side automated dialing endpoint (`/api/dial/automated`)
+- Bulk campaign dialing with sequential processing and status tracking
+- Requires GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD environment variables
+- 5-second delay between calls to prevent system overload
 
 ### Key Architectural Patterns
 
