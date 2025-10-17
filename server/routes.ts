@@ -541,31 +541,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
                   // Wait for call duration (30 seconds as example)
                   await new Promise(resolve => setTimeout(resolve, 30000));
-
-                  // Stop audio capture
-                  await audioHandler.stopCapture();
-
-                  // Save recording
-                  const recordingPath = audioHandler.getRecordingPath();
-                  if (callHistoryId) {
-                    await storage.createCallRecording({
-                      callHistoryId: callHistoryId,
-                      recordingUrl: recordingPath,
-                      duration: "30",
-                    });
-
-                    // Save transcript
-                    const transcript = audioHandler.getTranscript();
-                    for (const turn of transcript) {
-                      await storage.createConversationTranscript({
-                        callHistoryId: callHistoryId,
-                        speaker: turn.speaker,
-                        message: turn.message,
-                      });
-                    }
-                  }
-
-                  console.log(`Recording and transcript saved for call ${callId}`);
                 }
               }
             }
@@ -590,8 +565,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 error instanceof Error ? error.message : 'Unknown error'
               );
             } finally {
-              // Clean up audio handler for this call
-              if (audioHandler) {
+              // Clean up audio handler for this call and save recording
+              if (audioHandler && callHistoryId) {
+                try {
+                  const recordingPath = await audioHandler.cleanup();
+                  
+                  if (recordingPath) {
+                    await storage.createCallRecording({
+                      callHistoryId: callHistoryId,
+                      recordingUrl: recordingPath,
+                      duration: "30",
+                    });
+
+                    const transcript = audioHandler.getTranscript();
+                    for (const turn of transcript) {
+                      await storage.createConversationTranscript({
+                        callHistoryId: callHistoryId,
+                        speaker: turn.speaker,
+                        message: turn.message,
+                      });
+                    }
+
+                    console.log(`Recording saved to ${recordingPath} with ${transcript.length} transcript entries`);
+                  }
+                } catch (error) {
+                  console.error('Failed to save recording/transcript:', error);
+                }
+              } else if (audioHandler) {
                 await audioHandler.cleanup();
               }
             }

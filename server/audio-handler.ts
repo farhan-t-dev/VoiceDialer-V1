@@ -2,6 +2,7 @@ import { Page } from 'playwright';
 import WebSocket, { WebSocketServer } from 'ws';
 import fs from 'fs';
 import path from 'path';
+import { AudioTranscoder } from './audio-transcoder';
 
 export interface AudioStreamConfig {
   elevenLabsApiKey: string;
@@ -25,15 +26,20 @@ export class AudioStreamHandler {
   private config: AudioStreamConfig;
   private wsServer: WebSocketServer | null = null;
   private wsConnection: WebSocket | null = null;
-  private recordingStream: fs.WriteStream | null = null;
   private conversationTranscript: ConversationTurn[] = [];
   private isProcessing: boolean = false;
+  private isAcceptingChunks: boolean = false;
   private callId: string;
+  private transcoder: AudioTranscoder;
+  private wavFilePaths: string[] = [];
+  private audioQueue: Array<{ buffer: Buffer; timestamp: number }> = [];
+  private processingQueue: boolean = false;
 
   constructor(page: Page, config: AudioStreamConfig, callId: string) {
     this.page = page;
     this.config = config;
     this.callId = callId;
+    this.transcoder = new AudioTranscoder();
   }
 
   async startAudioCapture(): Promise<void> {
@@ -45,6 +51,7 @@ export class AudioStreamHandler {
       await this.injectAudioCaptureScript();
 
       this.isProcessing = true;
+      this.isAcceptingChunks = true;
 
       console.log(`[Audio] Audio capture started successfully for call ${this.callId}`);
     } catch (error) {
@@ -112,33 +119,56 @@ export class AudioStreamHandler {
   private async setupAudioWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       const wsPort = 8080 + Math.floor(Math.random() * 1000);
+      const connectionTimeout = setTimeout(() => {
+        reject(new Error('WebSocket connection timeout after 10 seconds'));
+      }, 10000);
+
       this.wsServer = new WebSocketServer({ port: wsPort });
       
       this.wsServer.on('listening', async () => {
         console.log(`[WebSocket] Server listening on port ${wsPort}`);
         
         try {
-          await this.page.evaluate((port) => {
-            (window as any).audioWebSocket = new WebSocket(`ws://localhost:${port}`);
-            
-            (window as any).audioWebSocket.onopen = () => {
-              console.log('[Browser] Connected to audio WebSocket server');
-            };
+          let connectionConfirmed = false;
 
-            (window as any).audioWebSocket.onerror = (error: any) => {
-              console.error('[Browser] WebSocket error:', error);
-            };
+          await this.page.evaluate((port) => {
+            return new Promise<void>((resolveClient, rejectClient) => {
+              const ws = new WebSocket(`ws://localhost:${port}`);
+              (window as any).audioWebSocket = ws;
+              
+              const clientTimeout = setTimeout(() => {
+                rejectClient(new Error('Client connection timeout'));
+              }, 5000);
+
+              ws.onopen = () => {
+                clearTimeout(clientTimeout);
+                console.log('[Browser] Connected to audio WebSocket server');
+                resolveClient();
+              };
+
+              ws.onerror = (error: any) => {
+                clearTimeout(clientTimeout);
+                console.error('[Browser] WebSocket error:', error);
+                rejectClient(new Error('WebSocket connection failed'));
+              };
+            });
           }, wsPort);
 
-          setTimeout(() => resolve(), 1000);
+          connectionConfirmed = true;
+          clearTimeout(connectionTimeout);
+          console.log('[WebSocket] Browser WebSocket client connected successfully');
         } catch (error) {
+          clearTimeout(connectionTimeout);
           reject(error);
+          return;
         }
       });
 
       this.wsServer.on('connection', (ws: WebSocket) => {
-        console.log('[WebSocket] Audio WebSocket connected');
+        console.log('[WebSocket] Server received connection');
         this.wsConnection = ws;
+        clearTimeout(connectionTimeout);
+        resolve();
 
         ws.on('message', async (message: string) => {
           try {
@@ -146,13 +176,25 @@ export class AudioStreamHandler {
             
             if (data.type === 'audio' && data.data) {
               const audioBuffer = Buffer.from(data.data, 'base64');
-              await this.processWithElevenLabs(audioBuffer);
               
-              this.conversationTranscript.push({
-                speaker: 'contact',
-                message: '[Contact Audio Captured]',
-                timestamp: new Date(),
-              });
+              if (this.isAcceptingChunks) {
+                this.audioQueue.push({
+                  buffer: audioBuffer,
+                  timestamp: data.timestamp || Date.now()
+                });
+                
+                this.conversationTranscript.push({
+                  speaker: 'contact',
+                  message: '[Contact Audio Captured]',
+                  timestamp: new Date(),
+                });
+
+                if (!this.processingQueue) {
+                  this.processAudioQueue();
+                }
+              } else {
+                console.warn('[Audio] Dropping audio chunk - no longer accepting');
+              }
             }
           } catch (error) {
             console.error('[WebSocket] Error processing message:', error);
@@ -170,16 +212,37 @@ export class AudioStreamHandler {
 
       this.wsServer.on('error', (error: Error) => {
         console.error('[WebSocket] Server error:', error);
+        clearTimeout(connectionTimeout);
         reject(error);
       });
     });
   }
 
-  private async processWithElevenLabs(audioChunk: Buffer): Promise<void> {
-    if (!this.isProcessing) return;
+  private async processAudioQueue(): Promise<void> {
+    if (this.processingQueue) return;
 
+    this.processingQueue = true;
+
+    while (this.audioQueue.length > 0) {
+      const audioItem = this.audioQueue.shift();
+      if (audioItem) {
+        await this.processWithElevenLabs(audioItem.buffer);
+      }
+    }
+
+    this.processingQueue = false;
+  }
+
+  private async processWithElevenLabs(audioChunk: Buffer): Promise<void> {
     try {
       console.log(`[ElevenLabs] Processing audio chunk (${audioChunk.length} bytes)`);
+
+      await this.saveToRecording(audioChunk, 'webm');
+
+      if (!this.isProcessing) {
+        console.log('[ElevenLabs] Skipping AI processing - call ending');
+        return;
+      }
 
       const formData = new FormData();
       const audioBlob = new Blob([audioChunk], { type: 'audio/webm' });
@@ -216,9 +279,7 @@ export class AudioStreamHandler {
         console.log(`[ElevenLabs] Received AI response (${aiAudioBuffer.length} bytes)`);
 
         await this.playAudioResponse(aiAudioBuffer);
-        
-        await this.saveToRecording(audioChunk);
-        await this.saveToRecording(aiAudioBuffer);
+        await this.saveToRecording(aiAudioBuffer, 'mp3');
 
         this.conversationTranscript.push({
           speaker: 'agent',
@@ -273,24 +334,43 @@ export class AudioStreamHandler {
     }
   }
 
-  private async saveToRecording(audioChunk: Buffer): Promise<void> {
+  private async saveToRecording(audioChunk: Buffer, format: 'webm' | 'mp3'): Promise<void> {
     try {
-      const recordingDir = path.join(process.cwd(), 'recordings');
-      
-      if (!fs.existsSync(recordingDir)) {
-        fs.mkdirSync(recordingDir, { recursive: true });
-      }
-
-      const recordingPath = path.join(recordingDir, `${this.callId}.mp3`);
-      
-      if (!this.recordingStream) {
-        this.recordingStream = fs.createWriteStream(recordingPath, { flags: 'a' });
-        console.log(`[Recording] Started recording to ${recordingPath}`);
-      }
-      
-      this.recordingStream.write(audioChunk);
+      console.log(`[Recording] Transcoding ${format} audio chunk (${audioChunk.length} bytes)`);
+      const wavPath = await this.transcoder.transcodeToWav(audioChunk, format);
+      this.wavFilePaths.push(wavPath);
+      console.log(`[Recording] Audio chunk transcoded to WAV: ${wavPath}`);
     } catch (error) {
-      console.error('[Recording] Failed to save recording:', error);
+      console.error('[Recording] Failed to save recording chunk:', error);
+    }
+  }
+
+  private async finalizeRecording(): Promise<string> {
+    const recordingDir = path.join(process.cwd(), 'recordings');
+    
+    if (!fs.existsSync(recordingDir)) {
+      fs.mkdirSync(recordingDir, { recursive: true });
+    }
+
+    const finalPath = path.join(recordingDir, `${this.callId}.wav`);
+
+    if (this.wavFilePaths.length === 0) {
+      console.log('[Recording] No audio chunks to finalize');
+      return '';
+    }
+
+    try {
+      console.log(`[Recording] Concatenating ${this.wavFilePaths.length} WAV files`);
+      await this.transcoder.concatenateWavFiles(this.wavFilePaths, finalPath);
+      console.log(`[Recording] Final recording saved to ${finalPath}`);
+      
+      await this.transcoder.cleanupTempFiles(this.wavFilePaths);
+      this.wavFilePaths = [];
+      
+      return finalPath;
+    } catch (error) {
+      console.error('[Recording] Failed to finalize recording:', error);
+      throw error;
     }
   }
 
@@ -299,25 +379,55 @@ export class AudioStreamHandler {
   }
 
   public getRecordingPath(): string {
-    return path.join(process.cwd(), 'recordings', `${this.callId}.mp3`);
+    return path.join(process.cwd(), 'recordings', `${this.callId}.wav`);
   }
 
   async stopCapture(): Promise<void> {
     console.log(`[Audio] Stopping audio capture for call ${this.callId}`);
-    
+
     this.isProcessing = false;
 
     await this.page.evaluate(() => {
       if ((window as any).mediaRecorder && (window as any).mediaRecorder.state !== 'inactive') {
         (window as any).mediaRecorder.stop();
       }
+    }).catch(err => console.error('[Audio] Error stopping browser recording:', err));
+
+    console.log('[Audio] Waiting for final chunks (3 seconds)...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    await this.page.evaluate(() => {
       if ((window as any).audioWebSocket) {
         (window as any).audioWebSocket.close();
       }
-    }).catch(err => console.error('[Audio] Error stopping browser recording:', err));
+    }).catch(err => console.error('[Audio] Error closing browser WebSocket:', err));
+
+    console.log('[Audio] WebSocket closed, waiting for queued chunks (1 second)...');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    this.isAcceptingChunks = false;
+
+    console.log(`[Audio] Draining audio queue (${this.audioQueue.length} chunks remaining)`);
+    
+    if (!this.processingQueue && this.audioQueue.length > 0) {
+      await this.processAudioQueue();
+    }
+
+    const maxWaitTime = 30000;
+    const startTime = Date.now();
+    
+    while ((this.processingQueue || this.audioQueue.length > 0) && (Date.now() - startTime) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (this.audioQueue.length > 0) {
+      console.warn(`[Audio] Queue drain timeout - ${this.audioQueue.length} chunks abandoned`);
+    } else {
+      console.log('[Audio] Audio queue drained successfully');
+    }
   }
 
-  async cleanup(): Promise<void> {
+  async cleanup(): Promise<string> {
     console.log(`[Audio] Cleaning up resources for call ${this.callId}`);
 
     await this.stopCapture();
@@ -332,12 +442,10 @@ export class AudioStreamHandler {
       this.wsServer = null;
     }
 
-    if (this.recordingStream) {
-      this.recordingStream.end();
-      this.recordingStream = null;
-      console.log(`[Recording] Recording saved for call ${this.callId}`);
-    }
+    const recordingPath = await this.finalizeRecording();
 
     console.log(`[Audio] Cleanup completed for call ${this.callId}`);
+    
+    return recordingPath;
   }
 }
