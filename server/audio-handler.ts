@@ -393,8 +393,8 @@ export class AudioStreamHandler {
       }
     }).catch(err => console.error('[Audio] Error stopping browser recording:', err));
 
-    console.log('[Audio] Waiting for final chunks (3 seconds)...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    console.log('[Audio] Waiting for final chunks (4 seconds)...');
+    await new Promise(resolve => setTimeout(resolve, 4000));
 
     await this.page.evaluate(() => {
       if ((window as any).audioWebSocket) {
@@ -402,8 +402,8 @@ export class AudioStreamHandler {
       }
     }).catch(err => console.error('[Audio] Error closing browser WebSocket:', err));
 
-    console.log('[Audio] WebSocket closed, waiting for queued chunks (1 second)...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log('[Audio] WebSocket closed, waiting for queued chunks (2 seconds)...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     this.isAcceptingChunks = false;
 

@@ -140,21 +140,45 @@ Preferred communication style: Simple, everyday language.
 - @replit/vite-plugin-cartographer and dev-banner for Replit-specific development features
 - tsx for TypeScript execution in development
 
-**Google Voice Integration**
-- Playwright-based browser automation for Google Voice Business (`google-voice-automation.ts`)
-- Automated login and dialing without manual browser interaction
-- Server-side automated dialing endpoint (`/api/dial/automated`)
-- Bulk campaign dialing with sequential processing and status tracking
-- Requires GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD environment variables
-- 5-second delay between calls to prevent system overload
-
-**ElevenLabs Speech-to-Speech Integration (Planned)**
-- AI-powered voice conversations during automated calls
-- Speech-to-speech API for real-time conversation handling
-- Voice customization using ElevenLabs voice IDs in AI agent profiles
-- Requires ELEVENLABS_API_KEY environment variable
-- Settings page provides credential configuration interface
-- Integration pending: Full implementation with Google Voice automation
+**Google Voice + Virtual Audio Cable + ElevenLabs Integration (PRODUCTION)**
+- **Playwright Browser Automation** (`google-voice-automation.ts`)
+  - Automated login and dialing without manual browser interaction
+  - Visible browser mode (headless: false) required for audio device access
+  - Audio device configuration via command-line arguments
+  - Requires GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD environment variables
+  
+- **Virtual Audio Cable Audio Routing** (`audio-config.ts`, `audio-handler.ts`)
+  - Windows VPS-based audio routing between Google Voice and ElevenLabs
+  - VB-Audio Virtual Cable creates virtual audio devices for capture/playback
+  - Browser audio output → VAC → Node.js → ElevenLabs → VAC → Browser microphone input
+  - Requires VAC_INPUT_DEVICE and VAC_OUTPUT_DEVICE environment variables
+  
+- **ElevenLabs Speech-to-Speech AI** (`audio-handler.ts`)
+  - Real-time AI-powered voice conversations during calls
+  - Speech-to-speech API with agent personality and conversation scripts
+  - Voice customization using ElevenLabs voice IDs from AI agent profiles
+  - Requires ELEVENLABS_API_KEY environment variable
+  
+- **Audio Processing Pipeline**
+  - WebSocket-based audio capture from browser (MediaRecorder API)
+  - Serial queue processing prevents out-of-order audio chunks
+  - Audio transcoding: WebM (browser) + MP3 (ElevenLabs) → WAV format
+  - fluent-ffmpeg for audio conversion and concatenation
+  - Single playable WAV recording saved per call
+  - 6-second graceful shutdown window for final chunk capture
+  
+- **Call Recording & Transcripts** (`audio-transcoder.ts`)
+  - Both contact and AI audio saved to `/recordings` directory
+  - Audio chunks transcoded to WAV and concatenated in order
+  - Conversation transcripts track speaker turns with timestamps
+  - Stored in database via call_recordings and conversation_transcripts tables
+  
+- **Bulk Campaign Dialing**
+  - Sequential processing: one call at a time
+  - AI agent optional - falls back to simple dial without audio
+  - 5-second delay between calls
+  - Audio handler lifecycle: start → capture → process → cleanup
+  - Proper resource cleanup in try-finally blocks
 
 ### Key Architectural Patterns
 
