@@ -81,6 +81,31 @@ export function ContactDetail({ contact, onClose, onEdit }: ContactDetailProps) 
     },
   });
 
+  const automatedDialMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/dial/automated", {
+        contactId: contact.id,
+        phoneNumber: contact.phone,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "calls"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calls"] });
+      toast({
+        title: "Call initiated",
+        description: `Dialing ${contact.name}...`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Dial failed",
+        description: error.message || "Failed to initiate automated call. Please check your Google Voice credentials.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const logCallMutation = useMutation({
     mutationFn: async (data: InsertCallHistory) => {
       return apiRequest("POST", "/api/calls", data);
@@ -106,9 +131,7 @@ export function ContactDetail({ contact, onClose, onEdit }: ContactDetailProps) 
   });
 
   const handleCall = () => {
-    const url = getGoogleVoiceDialUrl(contact.phone);
-    window.open(url, "_blank");
-    setShowCallLog(true);
+    automatedDialMutation.mutate();
   };
 
   const handleLogCall = () => {
@@ -147,11 +170,11 @@ export function ContactDetail({ contact, onClose, onEdit }: ContactDetailProps) 
               className="w-full"
               size="lg"
               onClick={handleCall}
+              disabled={automatedDialMutation.isPending}
               data-testid="button-call"
             >
               <Phone className="h-4 w-4 mr-2" />
-              Call via Google Voice
-              <ExternalLink className="h-3 w-3 ml-2" />
+              {automatedDialMutation.isPending ? "Dialing..." : "Call Now (Automated)"}
             </Button>
 
             <Button
