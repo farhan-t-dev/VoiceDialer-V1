@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Phone, Upload } from "lucide-react";
+import { Plus, Search, Phone, Upload, Tag as TagIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -8,6 +8,7 @@ import { ContactTable } from "@/components/contact-table";
 import { ContactDialog } from "@/components/contact-dialog";
 import { ContactDetail } from "@/components/contact-detail";
 import { CSVImportDialog } from "@/components/csv-import-dialog";
+import { TagManagerDialog } from "@/components/tag-manager-dialog";
 import type { Contact } from "@shared/schema";
 
 export default function Dashboard() {
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
 
   const { data: contacts, isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -77,11 +79,20 @@ export default function Dashboard() {
           
           <Button 
             variant="outline" 
+            onClick={() => setIsTagManagerOpen(true)} 
+            data-testid="button-manage-tags"
+          >
+            <TagIcon className="h-4 w-4 mr-2" />
+            Tags
+          </Button>
+
+          <Button 
+            variant="outline" 
             onClick={() => setIsImportDialogOpen(true)} 
             data-testid="button-import-csv"
           >
             <Upload className="h-4 w-4 mr-2" />
-            Import CSV
+            Import
           </Button>
 
           <Button onClick={handleAddNew} data-testid="button-add-contact">
@@ -138,6 +149,11 @@ export default function Dashboard() {
       <CSVImportDialog
         open={isImportDialogOpen}
         onOpenChange={setIsImportDialogOpen}
+      />
+
+      <TagManagerDialog
+        open={isTagManagerOpen}
+        onOpenChange={setIsTagManagerOpen}
       />
     </div>
   );

@@ -18,10 +18,12 @@ import {
   XCircle,
   Voicemail,
   AlertCircle,
+  Tag as TagIcon,
+  Plus,
 } from "lucide-react";
 import { getInitials, getAvatarColor, formatPhoneNumber, formatDate, getGoogleVoiceDialUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import type { Contact, CallHistory, InsertCallHistory } from "@shared/schema";
+import type { Contact, CallHistory, InsertCallHistory, Tag } from "@shared/schema";
 import {
   Select,
   SelectContent,
@@ -51,6 +53,32 @@ export function ContactDetail({ contact, onClose, onEdit }: ContactDetailProps) 
 
   const { data: callHistory, isLoading: isLoadingCalls } = useQuery<CallHistory[]>({
     queryKey: ["/api/contacts", contact.id, "calls"],
+  });
+
+  const { data: contactTags } = useQuery<Tag[]>({
+    queryKey: ["/api/contacts", contact.id, "tags"],
+  });
+
+  const { data: allTags } = useQuery<Tag[]>({
+    queryKey: ["/api/tags"],
+  });
+
+  const addTagMutation = useMutation({
+    mutationFn: async (tagId: string) => {
+      return apiRequest("POST", `/api/contacts/${contact.id}/tags/${tagId}`, undefined);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "tags"] });
+    },
+  });
+
+  const removeTagMutation = useMutation({
+    mutationFn: async (tagId: string) => {
+      return apiRequest("DELETE", `/api/contacts/${contact.id}/tags/${tagId}`, undefined);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "tags"] });
+    },
   });
 
   const logCallMutation = useMutation({
@@ -135,6 +163,66 @@ export function ContactDetail({ contact, onClose, onEdit }: ContactDetailProps) 
               <Edit className="h-4 w-4 mr-2" />
               Edit Contact
             </Button>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <TagIcon className="h-4 w-4" />
+                Tags
+              </h4>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {contactTags && contactTags.length > 0 ? (
+                contactTags.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    style={{ backgroundColor: tag.color, color: "#ffffff" }}
+                    className="cursor-pointer hover-elevate"
+                    onClick={() => removeTagMutation.mutate(tag.id)}
+                    data-testid={`badge-tag-${tag.id}`}
+                  >
+                    {tag.name}
+                    <X className="h-3 w-3 ml-1" />
+                  </Badge>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No tags assigned</p>
+              )}
+            </div>
+
+            {allTags && allTags.length > 0 && (
+              <Select
+                value=""
+                onValueChange={(tagId) => {
+                  if (!contactTags?.find(t => t.id === tagId)) {
+                    addTagMutation.mutate(tagId);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full" data-testid="select-add-tag">
+                  <SelectValue placeholder="Add a tag..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allTags
+                    .filter(tag => !contactTags?.find(ct => ct.id === tag.id))
+                    .map((tag) => (
+                      <SelectItem key={tag.id} value={tag.id}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          {tag.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {showCallLog && (

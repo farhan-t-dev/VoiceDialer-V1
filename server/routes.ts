@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertCallHistorySchema } from "@shared/schema";
+import { insertContactSchema, insertCallHistorySchema, insertTagSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contacts", async (_req, res) => {
@@ -124,6 +124,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to import contacts" });
+    }
+  });
+
+  app.get("/api/tags", async (_req, res) => {
+    try {
+      const allTags = await storage.getAllTags();
+      res.json(allTags);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tags" });
+    }
+  });
+
+  app.post("/api/tags", async (req, res) => {
+    try {
+      const validated = insertTagSchema.parse(req.body);
+      const tag = await storage.createTag(validated);
+      res.status(201).json(tag);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid tag data" });
+    }
+  });
+
+  app.delete("/api/tags/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTag(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Tag not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete tag" });
+    }
+  });
+
+  app.get("/api/contacts/:id/tags", async (req, res) => {
+    try {
+      const contactTags = await storage.getContactTags(req.params.id);
+      res.json(contactTags);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contact tags" });
+    }
+  });
+
+  app.post("/api/contacts/:id/tags/:tagId", async (req, res) => {
+    try {
+      await storage.addTagToContact(req.params.id, req.params.tagId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add tag to contact" });
+    }
+  });
+
+  app.delete("/api/contacts/:id/tags/:tagId", async (req, res) => {
+    try {
+      await storage.removeTagFromContact(req.params.id, req.params.tagId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove tag from contact" });
     }
   });
 

@@ -1,6 +1,19 @@
-import { contacts, callHistory, type Contact, type InsertContact, type CallHistory, type InsertCallHistory } from "@shared/schema";
+import { 
+  contacts, 
+  callHistory, 
+  tags,
+  contactTags,
+  type Contact, 
+  type InsertContact, 
+  type CallHistory, 
+  type InsertCallHistory,
+  type Tag,
+  type InsertTag,
+  type ContactTag,
+  type InsertContactTag
+} from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray, and } from "drizzle-orm";
 
 export interface IStorage {
   getAllContacts(): Promise<Contact[]>;
@@ -12,6 +25,14 @@ export interface IStorage {
   
   getCallHistory(contactId: string): Promise<CallHistory[]>;
   createCallHistory(call: InsertCallHistory): Promise<CallHistory>;
+
+  getAllTags(): Promise<Tag[]>;
+  createTag(tag: InsertTag): Promise<Tag>;
+  deleteTag(id: string): Promise<boolean>;
+  
+  getContactTags(contactId: string): Promise<Tag[]>;
+  addTagToContact(contactId: string, tagId: string): Promise<void>;
+  removeTagFromContact(contactId: string, tagId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -69,6 +90,51 @@ export class DatabaseStorage implements IStorage {
       .values(insertContacts)
       .returning();
     return created;
+  }
+
+  async getAllTags(): Promise<Tag[]> {
+    return await db.select().from(tags).orderBy(desc(tags.createdAt));
+  }
+
+  async createTag(insertTag: InsertTag): Promise<Tag> {
+    const [tag] = await db
+      .insert(tags)
+      .values(insertTag)
+      .returning();
+    return tag;
+  }
+
+  async deleteTag(id: string): Promise<boolean> {
+    const result = await db.delete(tags).where(eq(tags.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async getContactTags(contactId: string): Promise<Tag[]> {
+    const result = await db
+      .select({ tag: tags })
+      .from(contactTags)
+      .innerJoin(tags, eq(contactTags.tagId, tags.id))
+      .where(eq(contactTags.contactId, contactId));
+    
+    return result.map(r => r.tag);
+  }
+
+  async addTagToContact(contactId: string, tagId: string): Promise<void> {
+    await db
+      .insert(contactTags)
+      .values({ contactId, tagId })
+      .onConflictDoNothing();
+  }
+
+  async removeTagFromContact(contactId: string, tagId: string): Promise<void> {
+    await db
+      .delete(contactTags)
+      .where(
+        and(
+          eq(contactTags.contactId, contactId),
+          eq(contactTags.tagId, tagId)
+        )
+      );
   }
 }
 
