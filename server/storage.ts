@@ -8,6 +8,7 @@ export interface IStorage {
   createContact(contact: InsertContact): Promise<Contact>;
   updateContact(id: string, contact: InsertContact): Promise<Contact | undefined>;
   deleteContact(id: string): Promise<boolean>;
+  bulkCreateContacts(contacts: InsertContact[]): Promise<Contact[]>;
   
   getCallHistory(contactId: string): Promise<CallHistory[]>;
   createCallHistory(call: InsertCallHistory): Promise<CallHistory>;
@@ -59,6 +60,15 @@ export class DatabaseStorage implements IStorage {
       .values(insertCall)
       .returning();
     return call;
+  }
+
+  async bulkCreateContacts(insertContacts: InsertContact[]): Promise<Contact[]> {
+    if (insertContacts.length === 0) return [];
+    const created = await db
+      .insert(contacts)
+      .values(insertContacts)
+      .returning();
+    return created;
   }
 }
 

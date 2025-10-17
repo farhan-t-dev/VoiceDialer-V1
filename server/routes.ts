@@ -79,6 +79,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/contacts/bulk", async (req, res) => {
+    try {
+      const { contacts: contactsData } = req.body;
+      if (!Array.isArray(contactsData)) {
+        return res.status(400).json({ error: "Expected an array of contacts" });
+      }
+
+      const results = {
+        successful: [] as any[],
+        failed: [] as any[],
+      };
+
+      for (const contactData of contactsData) {
+        const lineNumber = contactData._csvLineNumber;
+        const { _csvLineNumber, ...dataWithoutLineNumber } = contactData;
+        
+        try {
+          const validated = insertContactSchema.parse(dataWithoutLineNumber);
+          results.successful.push(validated);
+        } catch (error) {
+          let errorMessage = "Validation failed";
+          if (error instanceof Error) {
+            errorMessage = error.message;
+          }
+          
+          results.failed.push({
+            lineNumber,
+            data: dataWithoutLineNumber,
+            error: errorMessage,
+          });
+        }
+      }
+
+      const created = results.successful.length > 0 
+        ? await storage.bulkCreateContacts(results.successful)
+        : [];
+
+      res.status(201).json({
+        imported: created.length,
+        failed: results.failed.length,
+        contacts: created,
+        errors: results.failed,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to import contacts" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

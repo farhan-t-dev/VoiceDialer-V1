@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Phone } from "lucide-react";
+import { Plus, Search, Phone, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ContactTable } from "@/components/contact-table";
 import { ContactDialog } from "@/components/contact-dialog";
 import { ContactDetail } from "@/components/contact-detail";
+import { CSVImportDialog } from "@/components/csv-import-dialog";
 import type { Contact } from "@shared/schema";
 
 export default function Dashboard() {
@@ -14,6 +15,7 @@ export default function Dashboard() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const { data: contacts, isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -73,6 +75,15 @@ export default function Dashboard() {
             />
           </div>
           
+          <Button 
+            variant="outline" 
+            onClick={() => setIsImportDialogOpen(true)} 
+            data-testid="button-import-csv"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Import CSV
+          </Button>
+
           <Button onClick={handleAddNew} data-testid="button-add-contact">
             <Plus className="h-4 w-4 mr-2" />
             Add Contact
@@ -122,6 +133,11 @@ export default function Dashboard() {
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         contact={editingContact}
+      />
+
+      <CSVImportDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
       />
     </div>
   );
