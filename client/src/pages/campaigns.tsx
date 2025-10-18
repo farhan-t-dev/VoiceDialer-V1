@@ -204,14 +204,13 @@ function CreateCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>AI Agent (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || ""}>
+                  <Select onValueChange={field.onChange} value={field.value || undefined}>
                     <FormControl>
                       <SelectTrigger data-testid="select-agent">
-                        <SelectValue placeholder="Select an AI agent for automated conversations" />
+                        <SelectValue placeholder="No AI Agent (manual calling only)" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">No AI Agent</SelectItem>
                       {activeAgents.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id} data-testid={`option-agent-${agent.id}`}>
                           {agent.name}
