@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Settings as SettingsIcon, Save, Key } from "lucide-react";
+import { Settings as SettingsIcon, Save, Key, ArrowLeft } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,19 +47,26 @@ export default function Settings() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
         <div className="flex items-center gap-3">
+          <Link href="/">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
             <SettingsIcon className="h-5 w-5 text-primary-foreground" />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-lg font-semibold">Settings</h1>
             <p className="text-xs text-muted-foreground">Configure API credentials and integrations</p>
           </div>
         </div>
+        
+        <ThemeToggle />
       </header>
 
-      <main className="flex-1 overflow-auto p-6 space-y-6">
+      <main className="flex-1 overflow-auto p-4 sm:p-6 space-y-6">
         <Alert>
           <Key className="h-4 w-4" />
           <AlertDescription>
@@ -95,7 +104,7 @@ export default function Settings() {
                 </a>
               </p>
             </div>
-            <Button onClick={handleSaveElevenLabs} disabled={isSaving} data-testid="button-save-elevenlabs">
+            <Button onClick={handleSaveElevenLabs} disabled={isSaving} data-testid="button-save-elevenlabs" className="w-full sm:w-auto">
               <Save className="h-4 w-4 mr-2" />
               Save ElevenLabs API Key
             </Button>
@@ -138,7 +147,7 @@ export default function Settings() {
                 For security, please set these directly in your Replit Secrets instead of using this form.
               </AlertDescription>
             </Alert>
-            <Button onClick={handleSaveGoogleVoice} disabled={isSaving} data-testid="button-save-google">
+            <Button onClick={handleSaveGoogleVoice} disabled={isSaving} data-testid="button-save-google" className="w-full sm:w-auto">
               <Save className="h-4 w-4 mr-2" />
               Save Google Voice Credentials
             </Button>
