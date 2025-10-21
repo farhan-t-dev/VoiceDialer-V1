@@ -1,12 +1,16 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, Users, BarChart3, PhoneCall, TrendingUp, Bot, Settings as SettingsIcon } from "lucide-react";
+import { Phone, Users, BarChart3, PhoneCall, TrendingUp, Bot, Settings as SettingsIcon, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import type { Contact, Campaign, CallHistory } from "@shared/schema";
 import { Link } from "wouter";
 
 export default function Home() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
   const { data: contacts } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
   });
@@ -25,56 +29,75 @@ export default function Home() {
   const activeCampaigns = campaigns?.filter(c => c.status === 'active').length || 0;
 
   const recentCalls = calls?.slice(0, 5) || [];
+  
+  const navigationItems = [
+    { href: "/contacts", icon: Users, label: "Contacts", testId: "button-contacts" },
+    { href: "/campaigns", icon: PhoneCall, label: "Campaigns", testId: "button-campaigns" },
+    { href: "/agents", icon: Bot, label: "AI Agents", testId: "button-agents" },
+    { href: "/analytics", icon: BarChart3, label: "Analytics", testId: "button-analytics" },
+    { href: "/settings", icon: SettingsIcon, label: "Settings", testId: "button-settings" },
+  ];
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
             <Phone className="h-5 w-5 text-primary-foreground" />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-lg font-semibold">Google Voice Dialer</h1>
             <p className="text-xs text-muted-foreground">Dashboard Overview</p>
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
-          <Link href="/contacts">
-            <Button variant="outline" data-testid="button-contacts">
-              <Users className="h-4 w-4 mr-2" />
-              Contacts
-            </Button>
-          </Link>
-          <Link href="/campaigns">
-            <Button variant="outline" data-testid="button-campaigns">
-              <PhoneCall className="h-4 w-4 mr-2" />
-              Campaigns
-            </Button>
-          </Link>
-          <Link href="/agents">
-            <Button variant="outline" data-testid="button-agents">
-              <Bot className="h-4 w-4 mr-2" />
-              AI Agents
-            </Button>
-          </Link>
-          <Link href="/analytics">
-            <Button variant="outline" data-testid="button-analytics">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Analytics
-            </Button>
-          </Link>
-          <Link href="/settings">
-            <Button variant="outline" data-testid="button-settings">
-              <SettingsIcon className="h-4 w-4 mr-2" />
-              Settings
-            </Button>
-          </Link>
+        {/* Desktop Navigation */}
+        <div className="hidden lg:flex items-center gap-3">
+          {navigationItems.map((item) => (
+            <Link key={item.href} href={item.href}>
+              <Button variant="outline" data-testid={item.testId}>
+                <item.icon className="h-4 w-4 mr-2" />
+                {item.label}
+              </Button>
+            </Link>
+          ))}
           <ThemeToggle />
+        </div>
+        
+        {/* Mobile Navigation */}
+        <div className="flex lg:hidden items-center gap-2">
+          <ThemeToggle />
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" data-testid="button-mobile-menu">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Navigation</SheetTitle>
+              </SheetHeader>
+              <nav className="flex flex-col gap-4 mt-6">
+                {navigationItems.map((item) => (
+                  <Link key={item.href} href={item.href}>
+                    <Button 
+                      variant="outline" 
+                      className="w-full justify-start" 
+                      data-testid={item.testId}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <item.icon className="h-4 w-4 mr-2" />
+                      {item.label}
+                    </Button>
+                  </Link>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 space-y-6">
+      <main className="flex-1 overflow-auto p-4 sm:p-6 space-y-6">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
           <p className="text-muted-foreground">

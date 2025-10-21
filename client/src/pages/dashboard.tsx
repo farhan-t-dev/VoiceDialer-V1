@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Phone, Upload, Tag as TagIcon, BarChart3, Users } from "lucide-react";
+import { Plus, Search, Phone, Upload, Tag as TagIcon, BarChart3, Users, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -55,17 +55,23 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
         <div className="flex items-center gap-3">
+          <Link href="/">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
             <Phone className="h-5 w-5 text-primary-foreground" />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold">Google Voice Dialer</h1>
+          <div className="hidden sm:block">
+            <h1 className="text-lg font-semibold">Contacts</h1>
+            <p className="text-xs text-muted-foreground">Manage your contact database</p>
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -73,46 +79,36 @@ export default function Dashboard() {
               placeholder="Search contacts..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-80 pl-9"
+              className="w-60 lg:w-80 pl-9"
               data-testid="input-search"
             />
           </div>
           
-          <Link href="/campaigns">
-            <Button variant="outline" data-testid="button-campaigns">
-              <Users className="h-4 w-4 mr-2" />
-              Campaigns
-            </Button>
-          </Link>
-
-          <Link href="/analytics">
-            <Button variant="outline" data-testid="button-analytics">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Analytics
-            </Button>
-          </Link>
-
           <Button 
             variant="outline" 
-            onClick={() => setIsTagManagerOpen(true)} 
-            data-testid="button-manage-tags"
-          >
-            <TagIcon className="h-4 w-4 mr-2" />
-            Tags
-          </Button>
-
-          <Button 
-            variant="outline" 
+            size="sm"
+            className="hidden sm:flex"
             onClick={() => setIsImportDialogOpen(true)} 
             data-testid="button-import-csv"
           >
-            <Upload className="h-4 w-4 mr-2" />
-            Import
+            <Upload className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Import</span>
+          </Button>
+
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="hidden sm:flex"
+            onClick={() => setIsTagManagerOpen(true)} 
+            data-testid="button-manage-tags"
+          >
+            <TagIcon className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Tags</span>
           </Button>
 
           <Button onClick={handleAddNew} data-testid="button-add-contact">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Contact
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add Contact</span>
           </Button>
           
           <ThemeToggle />
