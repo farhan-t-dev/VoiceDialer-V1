@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Phone, CheckCircle2, TrendingUp, Users } from "lucide-react";
+import { ArrowLeft, Phone, CheckCircle2, TrendingUp, Users, BarChart3 } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/theme-toggle";
 import type { CallHistory, Contact } from "@shared/schema";
 import { formatDate } from "@/lib/utils";
 import {
@@ -118,39 +119,34 @@ export default function Analytics() {
       .slice(0, 5);
   }
 
-  if (isLoadingCalls) {
-    return (
-      <div className="min-h-screen bg-background p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="mb-6">
-            <Link href="/">
-              <Button variant="ghost" size="sm" data-testid="button-back">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Contacts
-              </Button>
-            </Link>
-          </div>
-          <div className="text-center py-12 text-muted-foreground">Loading analytics...</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-            <p className="text-muted-foreground">Track your calling activity and performance</p>
-          </div>
+    <div className="flex h-screen flex-col bg-background">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link href="/">
-            <Button variant="outline" data-testid="button-back-to-contacts">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Contacts
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 border-2 border-primary/20">
+            <BarChart3 className="h-5 w-5 text-primary" />
+          </div>
+          <div className="hidden sm:block min-w-0">
+            <h1 className="text-lg font-semibold truncate">Analytics</h1>
+            <p className="text-xs text-muted-foreground truncate">Track calling performance</p>
+          </div>
         </div>
+        
+        <ThemeToggle />
+      </header>
+
+      <main className="flex-1 overflow-auto p-4 sm:p-6">
+        {isLoadingCalls ? (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground">Loading analytics...</p>
+          </div>
+        ) : (
+          <div className="max-w-7xl mx-auto space-y-6">
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
@@ -329,6 +325,8 @@ export default function Analytics() {
           </CardContent>
         </Card>
       </div>
+        )}
+      </main>
     </div>
   );
 }

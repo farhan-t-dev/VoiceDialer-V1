@@ -41,13 +41,13 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col bg-background">
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
-            <Phone className="h-5 w-5 text-primary-foreground" />
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 border-2 border-primary/20">
+            <Phone className="h-5 w-5 text-primary" />
           </div>
-          <div className="hidden sm:block">
-            <h1 className="text-lg font-semibold">Google Voice Dialer</h1>
-            <p className="text-xs text-muted-foreground">Dashboard Overview</p>
+          <div className="hidden sm:block min-w-0">
+            <h1 className="text-lg font-semibold truncate">Google Voice Dialer</h1>
+            <p className="text-xs text-muted-foreground truncate">Dashboard Overview</p>
           </div>
         </div>
         

@@ -252,32 +252,32 @@ export default function CampaignsPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link href="/">
             <Button variant="ghost" size="icon" data-testid="button-back">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
-            <Phone className="h-5 w-5 text-primary-foreground" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 border-2 border-primary/20">
+            <Phone className="h-5 w-5 text-primary" />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold">Campaigns</h1>
-            <p className="text-xs text-muted-foreground">Manage bulk calling campaigns</p>
+          <div className="hidden sm:block min-w-0">
+            <h1 className="text-lg font-semibold truncate">Campaigns</h1>
+            <p className="text-xs text-muted-foreground truncate">Manage bulk calling campaigns</p>
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
-          <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-campaign">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Campaign
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-campaign" size="sm">
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Create Campaign</span>
           </Button>
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-6">
+      <main className="flex-1 overflow-auto p-4 sm:p-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <p className="text-muted-foreground">Loading campaigns...</p>

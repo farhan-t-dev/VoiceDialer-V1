@@ -230,35 +230,39 @@ export default function CampaignDetailPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/95">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <Link href="/campaigns">
             <Button variant="ghost" size="icon" data-testid="button-back">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <div>
-            <h1 className="text-lg font-semibold" data-testid="text-campaign-name">{campaign.name}</h1>
-            <p className="text-xs text-muted-foreground">{campaign.description || "No description"}</p>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 border-2 border-primary/20 shrink-0">
+            <Phone className="h-5 w-5 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base sm:text-lg font-semibold truncate" data-testid="text-campaign-name">{campaign.name}</h1>
+            <p className="text-xs text-muted-foreground truncate hidden sm:block">{campaign.description || "No description"}</p>
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {campaign.status !== 'active' && pendingCount > 0 && (
             <Button 
               onClick={handleStartCampaign}
               disabled={startCampaignMutation.isPending}
               data-testid="button-start-campaign"
+              size="sm"
             >
               {startCampaignMutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Starting...
+                  <Loader2 className="h-4 w-4 sm:mr-2 animate-spin" />
+                  <span className="hidden sm:inline">Starting...</span>
                 </>
               ) : (
                 <>
-                  <Play className="h-4 w-4 mr-2" />
-                  Start Campaign
+                  <Play className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Start Campaign</span>
                 </>
               )}
             </Button>
@@ -267,15 +271,16 @@ export default function CampaignDetailPage() {
             variant="outline" 
             onClick={() => setIsAddContactsDialogOpen(true)}
             data-testid="button-add-contacts"
+            size="sm"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Contacts
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add Contacts</span>
           </Button>
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 space-y-6">
+      <main className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
