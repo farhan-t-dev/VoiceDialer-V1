@@ -8,6 +8,7 @@ import {
   aiAgents,
   callRecordings,
   conversationTranscripts,
+  callInteractions,
   type Contact, 
   type InsertContact, 
   type CallHistory, 
@@ -25,7 +26,9 @@ import {
   type CallRecording,
   type InsertCallRecording,
   type ConversationTranscript,
-  type InsertConversationTranscript
+  type InsertConversationTranscript,
+  type CallInteraction,
+  type InsertCallInteraction
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -76,6 +79,9 @@ export interface IStorage {
 
   getConversationTranscripts(callHistoryId: string): Promise<ConversationTranscript[]>;
   createConversationTranscript(transcript: InsertConversationTranscript): Promise<ConversationTranscript>;
+
+  getCallInteractions(callHistoryId: string): Promise<CallInteraction[]>;
+  createCallInteraction(interaction: InsertCallInteraction): Promise<CallInteraction>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -331,6 +337,22 @@ export class DatabaseStorage implements IStorage {
       .values(insertTranscript)
       .returning();
     return transcript;
+  }
+
+  async getCallInteractions(callHistoryId: string): Promise<CallInteraction[]> {
+    return await db
+      .select()
+      .from(callInteractions)
+      .where(eq(callInteractions.callHistoryId, callHistoryId))
+      .orderBy(callInteractions.capturedAt);
+  }
+
+  async createCallInteraction(insertInteraction: InsertCallInteraction): Promise<CallInteraction> {
+    const [interaction] = await db
+      .insert(callInteractions)
+      .values(insertInteraction)
+      .returning();
+    return interaction;
   }
 }
 

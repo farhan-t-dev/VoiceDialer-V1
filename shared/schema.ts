@@ -39,7 +39,8 @@ export const aiAgents = pgTable("ai_agents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   personality: text("personality").notNull(), // AI personality description
-  voiceId: text("voice_id"), // ElevenLabs voice ID
+  voiceId: text("voice_id"), // ElevenLabs voice ID (legacy)
+  agentId: text("agent_id"), // ElevenLabs Conversational AI agent ID
   conversationScript: text("conversation_script").notNull(), // Script/prompt for the AI
   greeting: text("greeting"), // Opening greeting
   objectionHandling: text("objection_handling"), // How to handle objections
@@ -53,7 +54,7 @@ export const campaigns = pgTable("campaigns", {
   name: text("name").notNull(),
   description: text("description"),
   agentId: varchar("agent_id").references(() => aiAgents.id, { onDelete: "set null" }), // AI agent for this campaign
-  status: text("status").notNull().default('draft'), // 'draft', 'active', 'completed', 'paused'
+  status: text("status").notNull().default('draft'), // 'draft', 'active', 'completed', 'paused', 'waiting_for_login'
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -81,6 +82,17 @@ export const conversationTranscripts = pgTable("conversation_transcripts", {
   speaker: text("speaker").notNull(), // 'agent' or 'contact'
   message: text("message").notNull(),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export const callInteractions = pgTable("call_interactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  callHistoryId: varchar("call_history_id").notNull().references(() => callHistory.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  field: text("field").notNull(), // 'interest_level', 'callback_preference', 'concerns', 'opt_in_status', 'notes'
+  value: text("value").notNull(),
+  confidence: text("confidence"), // 'high', 'medium', 'low' - AI's confidence in this data
+  source: text("source").notNull(), // 'user_transcript', 'agent_inference', 'conversation_flow'
+  capturedAt: timestamp("captured_at").defaultNow().notNull(),
 });
 
 export const insertContactSchema = createInsertSchema(contacts).omit({
@@ -114,7 +126,7 @@ export const insertCampaignSchema = createInsertSchema(campaigns).omit({
   createdAt: true,
 }).extend({
   name: z.string().min(1, "Campaign name is required"),
-  status: z.enum(['draft', 'active', 'completed', 'paused']).default('draft'),
+  status: z.enum(['draft', 'active', 'completed', 'paused', 'waiting_for_login']).default('draft'),
 });
 
 export const insertCampaignContactSchema = createInsertSchema(campaignContacts).omit({
@@ -145,6 +157,15 @@ export const insertConversationTranscriptSchema = createInsertSchema(conversatio
   speaker: z.enum(['agent', 'contact']),
 });
 
+export const insertCallInteractionSchema = createInsertSchema(callInteractions).omit({
+  id: true,
+  capturedAt: true,
+}).extend({
+  field: z.enum(['interest_level', 'callback_preference', 'concerns', 'opt_in_status', 'notes', 'other']),
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  source: z.enum(['user_transcript', 'agent_inference', 'conversation_flow']),
+});
+
 export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type CallHistory = typeof callHistory.$inferSelect;
@@ -163,3 +184,5 @@ export type CallRecording = typeof callRecordings.$inferSelect;
 export type InsertCallRecording = z.infer<typeof insertCallRecordingSchema>;
 export type ConversationTranscript = typeof conversationTranscripts.$inferSelect;
 export type InsertConversationTranscript = z.infer<typeof insertConversationTranscriptSchema>;
+export type CallInteraction = typeof callInteractions.$inferSelect;
+export type InsertCallInteraction = z.infer<typeof insertCallInteractionSchema>;

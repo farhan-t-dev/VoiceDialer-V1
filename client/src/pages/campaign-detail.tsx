@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Play, Plus, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Play, Plus, X, Loader2, Phone, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Campaign, Contact, CampaignContact } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 import { Link, useRoute } from "wouter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -161,15 +164,52 @@ export default function CampaignDetailPage() {
   const campaignId = params?.id || "";
   const { toast } = useToast();
   const [isAddContactsDialogOpen, setIsAddContactsDialogOpen] = useState(false);
+  const [isRestartDialogOpen, setIsRestartDialogOpen] = useState(false);
+  const previousStatusRef = useRef<string | null>(null);
 
   const { data: campaign } = useQuery<Campaign>({
     queryKey: ["/api/campaigns", campaignId],
     enabled: !!campaignId,
+    refetchOnMount: false, // Don't refetch on every mount
+    refetchOnWindowFocus: false, // Don't refetch when window gains focus
+    refetchInterval: (query) => {
+      // Poll every 20 seconds as fallback when campaign is active
+      // This ensures login notifications appear even if WebSocket fails
+      const data = query.state.data as Campaign | undefined;
+      const isActiveCampaign = data?.status === 'active' || data?.status === 'waiting_for_login';
+      
+      if (!isActiveCampaign) return false;
+      
+      return 20000; // 20 seconds - matches backend login check interval
+    },
   });
+
+  // Show notification when login is required
+  useEffect(() => {
+    if (campaign && campaign.status === 'waiting_for_login' && previousStatusRef.current !== 'waiting_for_login') {
+      toast({
+        title: "Manual Login Required",
+        description: "Please log in to Google Voice in the browser window to continue the campaign.",
+        duration: 10000,
+      });
+    }
+    previousStatusRef.current = campaign?.status || null;
+  }, [campaign?.status, toast]);
 
   const { data: campaignContacts, isLoading } = useQuery<(CampaignContact & { contact: Contact })[]>({
     queryKey: ["/api/campaigns", campaignId, "contacts"],
     enabled: !!campaignId,
+    refetchOnMount: false, // Don't refetch on every mount
+    refetchOnWindowFocus: false, // Don't refetch when window gains focus
+    refetchInterval: (query) => {
+      // Poll every 20 seconds as fallback when campaign is active
+      // This ensures UI updates even if WebSocket fails
+      const isActiveCampaign = campaign?.status === 'active' || campaign?.status === 'waiting_for_login';
+      
+      if (!isActiveCampaign) return false;
+      
+      return 20000; // 20 seconds - matches backend login check interval
+    },
   });
 
   const startCampaignMutation = useMutation({
@@ -177,7 +217,7 @@ export default function CampaignDetailPage() {
       return await apiRequest("POST", `/api/campaigns/${campaignId}/dial`, {});
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", campaignId] });
+      // Only invalidate contacts query - campaign status will be updated by WebSocket
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", campaignId, "contacts"] });
       toast({
         title: "Campaign started",
@@ -193,9 +233,61 @@ export default function CampaignDetailPage() {
     },
   });
 
+  const resetCampaignMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/campaigns/${campaignId}/reset`, {});
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", campaignId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", campaignId, "contacts"] });
+      toast({
+        title: "Campaign reset",
+        description: `${data.contactsReset} contact(s) reset to pending.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to reset campaign.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleStartCampaign = () => {
     if (window.confirm("Are you sure you want to start dialing all contacts in this campaign?")) {
       startCampaignMutation.mutate();
+    }
+  };
+
+  const handleRestartCampaign = () => {
+    resetCampaignMutation.mutate();
+  };
+
+  const stopCampaignMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/campaigns/${campaignId}/stop`, {});
+    },
+    onSuccess: () => {
+      // Only invalidate contacts query - campaign status will be updated by WebSocket
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", campaignId, "contacts"] });
+      toast({
+        title: "Campaign stopped",
+        description: "Campaign has been stopped successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to stop campaign.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleStopCampaign = () => {
+    if (window.confirm("Are you sure you want to stop this campaign?")) {
+      stopCampaignMutation.mutate();
     }
   };
 
@@ -219,6 +311,13 @@ export default function CampaignDetailPage() {
   const pendingCount = campaignContacts?.filter(cc => cc.status === 'pending').length || 0;
   const completedCount = campaignContacts?.filter(cc => cc.status === 'completed').length || 0;
   const failedCount = campaignContacts?.filter(cc => cc.status === 'failed').length || 0;
+  const totalContacts = campaignContacts?.length || 0;
+  
+  // Show restart button if there are contacts that can be dialed (pending or failed)
+  const hasRetryableContacts = pendingCount > 0 || failedCount > 0;
+  
+  // For fully completed campaigns, show restart button to re-dial all contacts
+  const isFullyCompleted = campaign?.status === 'completed' && completedCount === totalContacts && totalContacts > 0;
 
   if (!campaign) {
     return (
@@ -247,7 +346,8 @@ export default function CampaignDetailPage() {
         </div>
         
         <div className="flex items-center gap-2 sm:gap-3">
-          {campaign.status !== 'active' && pendingCount > 0 && (
+          {/* Show Start button for draft campaigns with pending/failed contacts */}
+          {campaign.status === 'draft' && hasRetryableContacts && (
             <Button 
               onClick={handleStartCampaign}
               disabled={startCampaignMutation.isPending}
@@ -267,6 +367,69 @@ export default function CampaignDetailPage() {
               )}
             </Button>
           )}
+          {/* Show Restart button for completed/paused/waiting_for_login/failed campaigns with pending/failed contacts */}
+          {(campaign.status === 'completed' || campaign.status === 'paused' || campaign.status === 'waiting_for_login' || campaign.status === 'failed') && hasRetryableContacts && (
+            <Button 
+              onClick={handleStartCampaign}
+              disabled={startCampaignMutation.isPending}
+              data-testid="button-restart-campaign"
+              size="sm"
+            >
+              {startCampaignMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 sm:mr-2 animate-spin" />
+                  <span className="hidden sm:inline">Restarting...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Restart Campaign</span>
+                </>
+              )}
+            </Button>
+          )}
+          {/* Show Restart button for fully completed campaigns to re-dial all contacts */}
+          {isFullyCompleted && (
+            <Button 
+              onClick={() => setIsRestartDialogOpen(true)}
+              disabled={resetCampaignMutation.isPending}
+              data-testid="button-restart-campaign"
+              size="sm"
+            >
+              {resetCampaignMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 sm:mr-2 animate-spin" />
+                  <span className="hidden sm:inline">Resetting...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Restart Campaign</span>
+                </>
+              )}
+            </Button>
+          )}
+          {(campaign.status === 'active' || campaign.status === 'waiting_for_login') && (
+            <Button 
+              onClick={handleStopCampaign}
+              disabled={stopCampaignMutation.isPending}
+              variant="destructive"
+              data-testid="button-stop-campaign"
+              size="sm"
+            >
+              {stopCampaignMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 sm:mr-2 animate-spin" />
+                  <span className="hidden sm:inline">Stopping...</span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">Stop Campaign</span>
+                  <span className="sm:hidden">Stop</span>
+                </>
+              )}
+            </Button>
+          )}
           <Button 
             variant="outline" 
             onClick={() => setIsAddContactsDialogOpen(true)}
@@ -281,14 +444,24 @@ export default function CampaignDetailPage() {
       </header>
 
       <main className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {campaign.status === 'waiting_for_login' && (
+          <Alert variant="destructive" className="border-2 animate-pulse" data-testid="alert-status-message">
+            <AlertCircle className="h-5 w-5" />
+            <AlertDescription className="ml-2 text-base font-medium">
+              MANUAL LOGIN REQUIRED - Please complete Google login in the browser window. The campaign will automatically continue once you log in.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Status</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold capitalize" data-testid="text-status">
-                {campaign.status}
+              <div className="text-2xl font-bold" data-testid="text-status">
+                {campaign.status === 'waiting_for_login' 
+                  ? 'Login Required' 
+                  : campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
               </div>
             </CardContent>
           </Card>
@@ -391,6 +564,30 @@ export default function CampaignDetailPage() {
         open={isAddContactsDialogOpen}
         onOpenChange={setIsAddContactsDialogOpen}
       />
+
+      <AlertDialog open={isRestartDialogOpen} onOpenChange={setIsRestartDialogOpen}>
+        <AlertDialogContent data-testid="dialog-restart-campaign">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart Campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reset all {totalContacts} contact(s) back to pending status. The campaign will return to draft state, allowing you to review and start dialing again when ready.
+              <br /><br />
+              <strong>All contacts will be re-dialed, including those previously completed.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-restart">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleRestartCampaign}
+              data-testid="button-confirm-restart"
+            >
+              Reset Campaign
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      <Toaster />
     </div>
   );
 }

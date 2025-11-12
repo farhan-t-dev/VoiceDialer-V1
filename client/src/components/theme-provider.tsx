@@ -12,17 +12,24 @@ type ThemeProviderState = {
   setTheme: (theme: Theme) => void;
 };
 
-const ThemeProviderContext = createContext<ThemeProviderState | undefined>(
-  undefined
-);
+const initialState: ThemeProviderState = {
+  theme: "dark",
+  setTheme: () => null,
+};
+
+const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 export function ThemeProvider({
   children,
   defaultTheme = "dark",
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem("theme") as Theme) || defaultTheme
-  );
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem("theme") as Theme;
+      return stored || defaultTheme;
+    }
+    return defaultTheme;
+  });
 
   useEffect(() => {
     const root = document.documentElement;

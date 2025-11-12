@@ -1,47 +1,52 @@
 import { useState } from "react";
-import { Settings as SettingsIcon, Save, Key, ArrowLeft } from "lucide-react";
+import { Settings as SettingsIcon, ArrowLeft, Chrome, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Settings() {
   const { toast } = useToast();
-  const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
-  const [googleVoiceEmail, setGoogleVoiceEmail] = useState("");
-  const [googleVoicePassword, setGoogleVoicePassword] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
+  const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
+  const [isOpeningFile, setIsOpeningFile] = useState(false);
 
-  const handleSaveElevenLabs = async () => {
-    setIsSaving(true);
+  const handleOpenGoogleVoice = async () => {
+    setIsOpeningBrowser(true);
     try {
-      // In a real app, this would save to a secure backend endpoint
-      // For now, we'll just show a success message
-      localStorage.setItem('ELEVENLABS_API_KEY', elevenLabsApiKey);
-      toast({ title: "ElevenLabs API key saved successfully" });
+      await apiRequest("POST", "/api/settings/open-google-voice");
+      toast({ 
+        title: "Opening Google Voice",
+        description: "Chromium browser opened with your Google Voice profile"
+      });
     } catch (error) {
-      toast({ title: "Failed to save API key", variant: "destructive" });
+      toast({ 
+        title: "Failed to open browser", 
+        description: "Make sure Chrome/Chromium is installed",
+        variant: "destructive" 
+      });
     } finally {
-      setIsSaving(false);
+      setIsOpeningBrowser(false);
     }
   };
 
-  const handleSaveGoogleVoice = async () => {
-    setIsSaving(true);
+  const handleOpenEnvFile = async () => {
+    setIsOpeningFile(true);
     try {
-      // In a real app, this would save to environment variables securely
+      await apiRequest("POST", "/api/settings/open-env-file");
       toast({ 
-        title: "Google Voice credentials saved", 
-        description: "These credentials are required for automated dialing" 
+        title: "Opening .env file",
+        description: "Edit your API keys and save the file"
       });
     } catch (error) {
-      toast({ title: "Failed to save credentials", variant: "destructive" });
+      toast({ 
+        title: "Failed to open file", 
+        description: "Make sure you have a text editor installed",
+        variant: "destructive" 
+      });
     } finally {
-      setIsSaving(false);
+      setIsOpeningFile(false);
     }
   };
 
@@ -67,119 +72,88 @@ export default function Settings() {
       </header>
 
       <main className="flex-1 overflow-auto p-4 sm:p-6 space-y-6">
-        <Alert>
-          <Key className="h-4 w-4" />
-          <AlertDescription>
-            API keys and credentials are stored securely. Never share these with anyone.
-          </AlertDescription>
-        </Alert>
-
         <Card>
           <CardHeader>
-            <CardTitle>ElevenLabs Speech-to-Speech API</CardTitle>
+            <CardTitle>Google Voice Login</CardTitle>
             <CardDescription>
-              Configure your ElevenLabs API key for AI-powered voice conversations during calls
+              Login to Google Voice manually - your session will be saved automatically
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="elevenlabs-api-key">API Key</Label>
-              <Input
-                id="elevenlabs-api-key"
-                type="password"
-                placeholder="sk_..."
-                value={elevenLabsApiKey}
-                onChange={(e) => setElevenLabsApiKey(e.target.value)}
-                data-testid="input-elevenlabs-key"
-              />
-              <p className="text-sm text-muted-foreground">
-                Get your API key from{" "}
-                <a 
-                  href="https://elevenlabs.io/app/settings/api-keys" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  ElevenLabs Dashboard
-                </a>
-              </p>
-            </div>
-            <Button onClick={handleSaveElevenLabs} disabled={isSaving} data-testid="button-save-elevenlabs" className="w-full sm:w-auto">
-              <Save className="h-4 w-4 mr-2" />
-              Save ElevenLabs API Key
+            <p className="text-sm text-muted-foreground">
+              Click the button below to open Google Voice in Chromium. Login with your Google account, 
+              and your session will persist for future automated calls.
+            </p>
+            <Button 
+              onClick={handleOpenGoogleVoice} 
+              disabled={isOpeningBrowser} 
+              data-testid="button-open-google-voice"
+              className="w-full sm:w-auto"
+            >
+              <Chrome className="h-4 w-4 mr-2" />
+              {isOpeningBrowser ? "Opening..." : "Open Google Voice in Browser"}
             </Button>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Google Voice Business Credentials</CardTitle>
+            <CardTitle>API Configuration</CardTitle>
             <CardDescription>
-              Required for automated browser-based dialing via Google Voice
+              Edit your ElevenLabs API key and other settings
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="google-voice-email">Google Voice Email</Label>
-              <Input
-                id="google-voice-email"
-                type="email"
-                placeholder="your-email@gmail.com"
-                value={googleVoiceEmail}
-                onChange={(e) => setGoogleVoiceEmail(e.target.value)}
-                data-testid="input-google-email"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="google-voice-password">Google Voice Password</Label>
-              <Input
-                id="google-voice-password"
-                type="password"
-                placeholder="••••••••"
-                value={googleVoicePassword}
-                onChange={(e) => setGoogleVoicePassword(e.target.value)}
-                data-testid="input-google-password"
-              />
-            </div>
-            <Alert>
-              <AlertDescription className="text-sm">
-                <strong>Note:</strong> These credentials are stored as environment variables (GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD). 
-                For security, please set these directly in your Replit Secrets instead of using this form.
-              </AlertDescription>
-            </Alert>
-            <Button onClick={handleSaveGoogleVoice} disabled={isSaving} data-testid="button-save-google" className="w-full sm:w-auto">
-              <Save className="h-4 w-4 mr-2" />
-              Save Google Voice Credentials
+            <p className="text-sm text-muted-foreground">
+              Click the button below to open the .env file where you can add or update your API keys.
+              After making changes, save the file and restart the application.
+            </p>
+            <Button 
+              onClick={handleOpenEnvFile} 
+              disabled={isOpeningFile} 
+              data-testid="button-open-env"
+              className="w-full sm:w-auto"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              {isOpeningFile ? "Opening..." : "Edit .env File"}
             </Button>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Integration Guide</CardTitle>
+            <CardTitle>Setup Guide</CardTitle>
             <CardDescription>
-              How to set up your integrations properly
+              Quick setup instructions for first-time configuration
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h4 className="font-semibold mb-2">ElevenLabs Setup:</h4>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
-                <li>Sign up at elevenlabs.io</li>
-                <li>Go to Settings → API Keys</li>
-                <li>Create a new API key</li>
-                <li>Copy and paste it above</li>
-                <li>Select voice IDs in your AI Agent profiles</li>
+              <h4 className="font-semibold mb-2">Step 1: Configure ElevenLabs API</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-4">
+                <li>Sign up at elevenlabs.io and create an API key</li>
+                <li>Click "Edit .env File" button above</li>
+                <li>Add your API key: ELEVENLABS_API_KEY=sk_your_key_here</li>
+                <li>Save the file and restart the application</li>
               </ol>
             </div>
             <div>
-              <h4 className="font-semibold mb-2">Google Voice Setup:</h4>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
-                <li>Ensure you have Google Voice Business account</li>
-                <li>Add GOOGLE_VOICE_EMAIL to Replit Secrets</li>
-                <li>Add GOOGLE_VOICE_PASSWORD to Replit Secrets</li>
-                <li>Restart the application</li>
-                <li>Test automated dialing from Campaigns</li>
+              <h4 className="font-semibold mb-2">Step 2: Login to Google Voice</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-4">
+                <li>Click "Open Google Voice in Browser" button above</li>
+                <li>Login with your Google Voice account</li>
+                <li>Close the browser when done - your session is saved</li>
+                <li>The app will use this session for automated calls</li>
+              </ol>
+            </div>
+            <div>
+              <h4 className="font-semibold mb-2">Step 3: Configure Virtual Audio Cable</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-4">
+                <li>Install VB-Audio Virtual Cable (2 cables minimum)</li>
+                <li>Set Line 1 as Windows default playback device</li>
+                <li>Set Line 2 as Windows default recording device</li>
+                <li>Set Line 2 volume to 100% in Windows Sound Settings</li>
+                <li>Download SoX and place in tools/ directory (see tools/README.md)</li>
               </ol>
             </div>
           </CardContent>

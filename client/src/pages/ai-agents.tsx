@@ -38,6 +38,7 @@ export default function AiAgents() {
       name: "",
       personality: "",
       voiceId: "",
+      agentId: "",
       conversationScript: "",
       greeting: "",
       objectionHandling: "",
@@ -96,6 +97,7 @@ export default function AiAgents() {
       name: agent.name,
       personality: agent.personality,
       voiceId: agent.voiceId || "",
+      agentId: agent.agentId || "",
       conversationScript: agent.conversationScript,
       greeting: agent.greeting || "",
       objectionHandling: agent.objectionHandling || "",
@@ -169,35 +171,53 @@ export default function AiAgents() {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Agent Name*</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Sales Agent Pro" {...field} data-testid="input-agent-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Agent Name*</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Sales Agent Pro" {...field} data-testid="input-agent-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-                  <FormField
-                    control={form.control}
-                    name="voiceId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ElevenLabs Voice ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="21m00Tcm4TlvDq8ikWAM" {...field} value={field.value || ""} data-testid="input-voice-id" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <FormField
+                  control={form.control}
+                  name="agentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ElevenLabs Agent ID*</FormLabel>
+                      <FormControl>
+                        <Input placeholder="abc123def456..." {...field} value={field.value || ""} data-testid="input-agent-id" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Find this in your ElevenLabs Conversational AI dashboard
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="voiceId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ElevenLabs Voice ID (Legacy)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="21m00Tcm4TlvDq8ikWAM" {...field} value={field.value || ""} data-testid="input-voice-id" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Optional - only for backwards compatibility
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}

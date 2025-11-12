@@ -1,0 +1,604 @@
+import { chromium, type BrowserContext, type Page } from 'playwright';
+import path from 'path';
+import { CallStateMonitor, CallState, type CallStateChange, type CallMonitorConfig } from './call-state-monitor.js';
+
+interface GoogleVoiceConfig {
+  email: string;
+  password: string;
+}
+
+class GoogleVoiceDialer {
+  private context: BrowserContext | null = null;
+  private page: Page | null = null;
+  private isLoggedIn: boolean = false;
+  private config: GoogleVoiceConfig;
+
+  constructor(config: GoogleVoiceConfig) {
+    this.config = config;
+  }
+
+  async initialize(audioInputDevice?: string, audioOutputDevice?: string) {
+    try {
+      // Create a persistent user data directory to save login session
+      const userDataDir = path.join(process.cwd(), 'playwright-data', 'google-voice-profile');
+      
+      const launchArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--use-fake-ui-for-media-stream',
+        '--autoplay-policy=no-user-gesture-required',
+        '--enable-features=VaapiVideoDecoder'
+      ];
+
+      if (audioInputDevice) {
+        launchArgs.push(`--use-fake-device-for-media-stream`);
+        launchArgs.push(`--audio-input-device=${audioInputDevice}`);
+      }
+
+      if (audioOutputDevice) {
+        launchArgs.push(`--audio-output-device=${audioOutputDevice}`);
+      }
+
+      // Use launchPersistentContext to save cookies and session data
+      this.context = await chromium.launchPersistentContext(userDataDir, {
+        headless: audioInputDevice || audioOutputDevice ? false : true,
+        args: launchArgs,
+        permissions: ['microphone', 'camera'],
+        viewport: { width: 1920, height: 1080 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+      });
+
+      // Grant permissions for Google Voice
+      await this.context.grantPermissions(['microphone', 'camera'], { 
+        origin: 'https://voice.google.com' 
+      });
+
+      // Get the first page (or create one if none exists)
+      const pages = this.context.pages();
+      if (pages.length > 0) {
+        this.page = pages[0];
+      } else {
+        this.page = await this.context.newPage();
+      }
+
+      console.log('Browser initialized successfully with persistent profile', {
+        userDataDir,
+        audioInput: audioInputDevice || 'none',
+        audioOutput: audioOutputDevice || 'none',
+        headless: audioInputDevice || audioOutputDevice ? false : true
+      });
+    } catch (error) {
+      console.error('Failed to initialize browser:', error);
+      throw error;
+    }
+  }
+
+  async login() {
+    if (!this.page) throw new Error('Browser not initialized');
+
+    try {
+      console.log('Navigating to Google Voice...');
+      await this.page.goto('https://voice.google.com', { 
+        waitUntil: 'domcontentloaded',
+        timeout: 30000 
+      });
+      
+      // Give the page a moment to fully load
+      await this.page.waitForTimeout(2000);
+
+      // Check if already logged in
+      const isAlreadyLoggedIn = await this.page.url().includes('voice.google.com/u/');
+      if (isAlreadyLoggedIn) {
+        console.log('Already logged in to Google Voice');
+        this.isLoggedIn = true;
+        return;
+      }
+
+      // Click sign in button if present
+      const signInButton = await this.page.locator('text=Sign in').first();
+      if (await signInButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await signInButton.click();
+        await this.page.waitForTimeout(2000);
+      }
+
+      // Try automated login
+      await this.attemptAutomatedLogin();
+      
+    } catch (error) {
+      console.error('Automated login failed:', error);
+      
+      // Fallback to manual login
+      console.log('\n*** AUTOMATED LOGIN FAILED - MANUAL LOGIN REQUIRED ***');
+      console.log('=======================================================');
+      console.log('Please manually complete the Google login in the browser window:');
+      console.log('  1. Enter your email and click Next');
+      console.log('  2. Enter your password and click Next');
+      console.log('  3. Complete any 2FA or security checks');
+      console.log('  4. Wait for Google Voice to load');
+      console.log('=======================================================');
+      console.log('Waiting up to 90 seconds for you to complete login...\n');
+      
+      // Wait for manual login (check every 3 seconds for up to 90 seconds)
+      const maxWaitTime = 90000; // 90 seconds
+      const checkInterval = 3000; // 3 seconds
+      const maxAttempts = maxWaitTime / checkInterval;
+      
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await this.page.waitForTimeout(checkInterval);
+        
+        // Check if successfully logged in
+        const currentUrl = this.page.url();
+        if (currentUrl.includes('voice.google.com/u/')) {
+          console.log('[SUCCESS] Manual login successful! Continuing with automation...\n');
+          this.isLoggedIn = true;
+          return;
+        }
+        
+        // Show progress every 15 seconds
+        if ((attempt + 1) % 5 === 0) {
+          const remainingSeconds = Math.round((maxWaitTime - (attempt + 1) * checkInterval) / 1000);
+          console.log(`[WAITING] Still waiting for login... (${remainingSeconds}s remaining)`);
+        }
+      }
+      
+      // If we got here, manual login timed out
+      throw new Error('Manual login timed out after 90 seconds. Please try again.');
+    }
+  }
+
+  private async attemptAutomatedLogin() {
+    if (!this.page) throw new Error('Browser not initialized');
+
+    // Enter email
+    console.log('Entering email...');
+    const emailInput = this.page.locator('input[type="email"]');
+    await emailInput.waitFor({ state: 'visible', timeout: 10000 });
+    await emailInput.fill(this.config.email);
+    await this.page.keyboard.press('Enter');
+    await this.page.waitForTimeout(3000);
+
+    // Enter password
+    console.log('Entering password...');
+    const passwordInput = this.page.locator('input[type="password"]');
+    await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+    await passwordInput.fill(this.config.password);
+    await this.page.keyboard.press('Enter');
+
+    // Wait for navigation to Google Voice
+    await this.page.waitForURL('**/voice.google.com/**', { timeout: 30000 });
+    
+    console.log('Successfully logged in to Google Voice');
+    this.isLoggedIn = true;
+  }
+
+  async dialNumber(phoneNumber: string): Promise<boolean> {
+    if (!this.page) throw new Error('Browser not initialized');
+    if (!this.isLoggedIn) await this.login();
+
+    try {
+      console.log(`Dialing number: ${phoneNumber}`);
+
+      // Navigate to the CALLS tab (not messages) - this has the dedicated dial pad
+      console.log('Navigating to Calls section...');
+      await this.page.goto('https://voice.google.com/u/0/calls', {
+        waitUntil: 'load',
+        timeout: 20000
+      });
+      
+      // Wait for page to stabilize
+      await this.page.waitForTimeout(2000);
+      
+      // Trigger a resize to ensure Google Voice UI renders properly
+      await this.page.setViewportSize({ width: 1920, height: 1080 });
+      await this.page.waitForTimeout(1000);
+
+      // Take a screenshot to see initial state
+      try {
+        await this.page.screenshot({ path: `debug-calls-page-${Date.now()}.png`, fullPage: true });
+        console.log('Screenshot of calls page saved');
+      } catch (e) {}
+
+      // CRITICAL: Open the dial pad and verify it's visible
+      console.log('Ensuring dial pad is open...');
+      
+      // Helper function to check if dial pad is visible
+      const isDialPadVisible = async (): Promise<boolean> => {
+        const dialPadIndicators = [
+          'input[placeholder*="Enter a name" i]',
+          'input[placeholder*="name or number" i]',
+          '[gv-id="dialpad"]',
+          '.dialpad',
+          'gv-dialpad'
+        ];
+        
+        for (const indicator of dialPadIndicators) {
+          try {
+            const element = this.page!.locator(indicator).first();
+            if (await element.isVisible({ timeout: 500 })) {
+              return true;
+            }
+          } catch (e) {
+            // Try next
+          }
+        }
+        return false;
+      };
+      
+      // Check if dial pad is already visible
+      let dialPadVisible = await isDialPadVisible();
+      
+      if (!dialPadVisible) {
+        console.log('Dial pad not visible, trying to open it...');
+        
+        const dialPadOpenerSelectors = [
+          'button[aria-label*="Make a call" i]',
+          'button[aria-label*="Dial" i]',
+          'button:has-text("Make a call")',
+          'div[role="button"]:has-text("Make a call")',
+          'gv-fab-button',
+          '[gv-id="dialpad-button"]',
+          'button.gmat-mdc-button[aria-label*="call" i]',
+          'button:has(gv-icon[icon="dialpad"])',
+          'button:has(mat-icon:has-text("dialpad"))'
+        ];
+        
+        let clickedOpener = false;
+        for (const selector of dialPadOpenerSelectors) {
+          try {
+            const element = this.page.locator(selector).first();
+            if (await element.isVisible({ timeout: 2000 })) {
+              const ariaLabel = await element.getAttribute('aria-label') || '';
+              console.log(`Found dial pad opener: "${ariaLabel}"`);
+              await element.click();
+              await this.page.waitForTimeout(2000);
+              clickedOpener = true;
+              
+              // Verify dial pad actually opened
+              dialPadVisible = await isDialPadVisible();
+              if (dialPadVisible) {
+                console.log('✅ Dial pad opened successfully');
+                break;
+              } else {
+                console.log('⚠️  Clicked opener but dial pad not visible, trying next selector...');
+              }
+            }
+          } catch (e) {
+            // Try next selector
+          }
+        }
+        
+        if (!clickedOpener) {
+          console.log('Could not find dial pad opener button');
+        }
+      } else {
+        console.log('✅ Dial pad already visible');
+      }
+      
+      // Final check - if dial pad still not visible, fail clearly
+      if (!dialPadVisible) {
+        throw new Error('Dial pad did not open. Cannot proceed with dialing. Check debug screenshot.');
+      }
+
+      // Now find the input field in the dial pad
+      console.log('Looking for dial pad input field...');
+      const numberInputSelectors = [
+        'input[placeholder*="Enter a name" i]',
+        'input[placeholder*="name or number" i]',
+        'input[aria-label*="Phone number" i]',
+        'input[placeholder*="Phone number" i]',
+        'input[type="tel"]',
+        'input[aria-label*="Enter" i]',
+        'input.gv-dial-input',
+        '#dialpad-input',
+        '[gv-id="dialpad-input"]'
+      ];
+      
+      let numberInputFound = false;
+      for (const selector of numberInputSelectors) {
+        try {
+          const elements = this.page.locator(selector);
+          const count = await elements.count();
+          
+          // Try each matching input
+          for (let i = 0; i < count; i++) {
+            const element = elements.nth(i);
+            if (await element.isVisible({ timeout: 2000 })) {
+              const placeholder = await element.getAttribute('placeholder') || '';
+              const ariaLabel = await element.getAttribute('aria-label') || '';
+              const bbox = await element.boundingBox();
+              
+              console.log(`Found input: placeholder="${placeholder}", aria-label="${ariaLabel}", position=${bbox ? `x=${Math.round(bbox.x)}` : 'unknown'}`);
+              
+              // Click to focus
+              await element.click();
+              await this.page.waitForTimeout(500);
+              
+              // Clear and enter phone number
+              await element.fill('');
+              await this.page.waitForTimeout(300);
+              await element.fill(phoneNumber);
+              await this.page.waitForTimeout(500);
+              
+              // Verify the number was entered (normalize both by removing non-digits)
+              const value = await element.inputValue();
+              const valueDigits = value.replace(/[^\d]/g, '');
+              const phoneDigits = phoneNumber.replace(/[^\d]/g, '');
+              
+              // Require exact match (both must be non-empty and equal)
+              if (valueDigits.length > 0 && valueDigits === phoneDigits) {
+                console.log(`✅ Successfully entered phone number: ${phoneNumber} (displayed as: "${value}")`);
+                numberInputFound = true;
+                break;
+              } else if (valueDigits.length === 0) {
+                console.log(`⚠️  Input field is empty, trying next input...`);
+              } else {
+                console.log(`⚠️  Number mismatch. Expected: "${phoneDigits}", got: "${valueDigits}", trying next input...`);
+              }
+            }
+          }
+          
+          if (numberInputFound) break;
+        } catch (e) {
+          // Try next selector
+        }
+      }
+      
+      if (!numberInputFound) {
+        throw new Error('Could not find or fill dial pad input field. Dial pad may not have opened properly.');
+      }
+      
+      // Take another screenshot after entering number
+      try {
+        await this.page.screenshot({ path: `debug-after-number-${Date.now()}.png`, fullPage: true });
+        console.log('Screenshot after entering number saved');
+      } catch (e) {}
+
+      // Now click the call button to initiate the call
+      console.log('Looking for call button to start the call...');
+      await this.page.waitForTimeout(2000);
+      
+      // First, try to find ALL buttons and identify the call button more intelligently
+      console.log('Searching for call button in dial pad area...');
+      
+      const callButtonSelectors = [
+        // Main call button in dial pad - look for green phone icon button
+        'button[aria-label="Call"]',
+        'button[aria-label="Voice call"]',
+        'button[aria-label="Make call"]',
+        'button[aria-label*="Start call" i]',
+        'div[role="button"][aria-label="Call"]',
+        
+        // Icon-based selectors - phone icon
+        'button:has(gv-icon[icon="phone"])',
+        'button:has(gv-icon[icon="call"])',
+        'button:has(mat-icon:has-text("phone"))',
+        'button:has(mat-icon:has-text("call"))',
+        
+        // Material button with specific classes
+        'gv-icon-button[aria-label="Call"]',
+        'button.gv-call-button',
+        'button.call-button',
+        
+        // Try finding by icon color/style (green call button)
+        'button[style*="rgb(26, 115, 232)"]', // Google blue
+        'button[style*="rgb(15, 157, 88)"]'   // Google green
+      ];
+      
+      let callInitiated = false;
+      
+      // Try each selector
+      for (const selector of callButtonSelectors) {
+        try {
+          const elements = this.page.locator(selector);
+          const count = await elements.count();
+          
+          for (let i = 0; i < count; i++) {
+            const element = elements.nth(i);
+            if (await element.isVisible({ timeout: 1000 })) {
+              const ariaLabel = await element.getAttribute('aria-label') || '';
+              const text = (await element.textContent() || '').trim();
+              
+              console.log(`Found button: selector="${selector}", aria-label="${ariaLabel}", text="${text}"`);
+              
+              // Strict filtering to avoid wrong buttons
+              const rejectPatterns = [
+                'learn more', 'settings', 'audio settings', 'video settings',
+                'more options', 'menu', 'help', 'close', 'cancel', 'availability',
+                'hide keypad', 'show keypad', 'search'
+              ];
+              
+              const lowerLabel = ariaLabel.toLowerCase();
+              const lowerText = text.toLowerCase();
+              
+              let shouldReject = false;
+              for (const pattern of rejectPatterns) {
+                if (lowerLabel.includes(pattern) || lowerText.includes(pattern)) {
+                  console.log(`  ❌ REJECTED: Contains "${pattern}"`);
+                  shouldReject = true;
+                  break;
+                }
+              }
+              
+              if (shouldReject) continue;
+              
+              // Text should be very short for icon buttons
+              if (text.length > 30) {
+                console.log(`  ❌ REJECTED: Text too long (${text.length} chars)`);
+                continue;
+              }
+              
+              // Click it!
+              console.log(`  ✅ CLICKING CALL BUTTON`);
+              await element.click();
+              callInitiated = true;
+              break;
+            }
+          }
+          
+          if (callInitiated) break;
+        } catch (e) {
+          // Try next selector
+        }
+      }
+      
+      if (!callInitiated) {
+        // Last resort: look for any button with a phone icon on the right side
+        console.log('Trying alternative approach: looking for any phone icon button...');
+        try {
+          // Find all buttons with icons
+          const iconButtons = this.page.locator('button:has(gv-icon), button:has(mat-icon), gv-icon-button');
+          const count = await iconButtons.count();
+          console.log(`Found ${count} icon buttons`);
+          
+          for (let i = 0; i < count; i++) {
+            const btn = iconButtons.nth(i);
+            if (await btn.isVisible({ timeout: 500 })) {
+              const bbox = await btn.boundingBox();
+              // Check if button is on the right side of screen (x > 600)
+              if (bbox && bbox.x > 600) {
+                const ariaLabel = await btn.getAttribute('aria-label') || '';
+                console.log(`Right-side icon button: aria-label="${ariaLabel}", x=${bbox.x}`);
+                
+                // If it doesn't have a reject pattern, try clicking it
+                if (!ariaLabel.toLowerCase().includes('settings') && 
+                    !ariaLabel.toLowerCase().includes('help') &&
+                    !ariaLabel.toLowerCase().includes('menu')) {
+                  console.log(`  ✅ Trying this button`);
+                  await btn.click();
+                  callInitiated = true;
+                  break;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Alternative approach failed:', e);
+        }
+      }
+      
+      if (!callInitiated) {
+        // Debug: enumerate all buttons
+        console.log('⚠️  Could not find call button. Enumerating all visible buttons:');
+        try {
+          const allButtons = this.page.locator('button:visible, div[role="button"]:visible');
+          const count = await allButtons.count();
+          console.log(`Found ${count} visible buttons on page:`);
+          
+          for (let i = 0; i < Math.min(count, 30); i++) {
+            const btn = allButtons.nth(i);
+            const ariaLabel = await btn.getAttribute('aria-label') || '';
+            const text = (await btn.textContent() || '').trim().substring(0, 50);
+            const tagName = await btn.evaluate(el => el.tagName);
+            const bbox = await btn.boundingBox().catch(() => null);
+            const pos = bbox ? `x=${Math.round(bbox.x)}, y=${Math.round(bbox.y)}` : 'no position';
+            console.log(`  [${i}] <${tagName}> aria-label="${ariaLabel}", text="${text}", ${pos}`);
+          }
+        } catch (e) {
+          console.error('Failed to enumerate buttons:', e);
+        }
+        
+        throw new Error('Could not find call button in dial pad. Check debug screenshots.');
+      }
+
+      console.log(`✅ Successfully initiated call to ${phoneNumber}`);
+      
+      // Wait for call to connect
+      await this.page.waitForTimeout(3000);
+
+      return true;
+    } catch (error) {
+      console.error(`Failed to dial ${phoneNumber}:`, error);
+      
+      // Take final error screenshot
+      const screenshotPath = `debug-dial-error-${Date.now()}.png`;
+      try {
+        await this.page?.screenshot({ path: screenshotPath, fullPage: true });
+        console.log(`Debug screenshot saved to: ${screenshotPath}`);
+      } catch (e) {
+        // Ignore screenshot errors
+      }
+      
+      throw error;
+    }
+  }
+
+  async hangup() {
+    if (!this.page) return;
+
+    try {
+      // Look for hangup/end call button
+      const hangupButton = this.page.locator('[aria-label*="Hang up"], [aria-label*="End call"], button:has-text("End")').first();
+      if (await hangupButton.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await hangupButton.click();
+        await this.page.waitForTimeout(1000);
+      }
+    } catch (error) {
+      console.error('Failed to hangup:', error);
+    }
+  }
+
+  getPage(): Page | null {
+    return this.page;
+  }
+
+  /**
+   * Create a call state monitor for the current page
+   */
+  createCallStateMonitor(config?: Partial<CallMonitorConfig>): CallStateMonitor {
+    if (!this.page) {
+      throw new Error('Browser not initialized');
+    }
+    return new CallStateMonitor(this.page, config);
+  }
+
+  async close() {
+    if (this.context) {
+      await this.context.close();
+      this.context = null;
+      this.page = null;
+      this.isLoggedIn = false;
+      console.log('Browser context closed');
+    }
+  }
+
+  async screenshot(path: string) {
+    if (this.page) {
+      await this.page.screenshot({ path, fullPage: true });
+      console.log(`Screenshot saved to ${path}`);
+    }
+  }
+}
+
+// Singleton instance
+let dialerInstance: GoogleVoiceDialer | null = null;
+
+export async function getDialer(audioInputDevice?: string, audioOutputDevice?: string): Promise<GoogleVoiceDialer> {
+  const email = process.env.GOOGLE_VOICE_EMAIL;
+  const password = process.env.GOOGLE_VOICE_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('Google Voice credentials not configured. Set GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD environment variables.');
+  }
+
+  if (!dialerInstance) {
+    dialerInstance = new GoogleVoiceDialer({ email, password });
+    await dialerInstance.initialize(audioInputDevice, audioOutputDevice);
+    await dialerInstance.login();
+  }
+
+  return dialerInstance;
+}
+
+export async function closeDialer() {
+  if (dialerInstance) {
+    await dialerInstance.close();
+    dialerInstance = null;
+  }
+}
+
+export async function automatedDial(phoneNumber: string): Promise<boolean> {
+  const dialer = await getDialer();
+  return await dialer.dialNumber(phoneNumber);
+}

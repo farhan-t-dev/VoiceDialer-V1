@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -61,11 +62,35 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  server.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
   });
+
+  // Graceful shutdown handlers to clean up resources
+  const shutdown = async () => {
+    log('Shutting down gracefully...');
+    
+    // Import and shutdown WebSocket server
+    const { campaignWebSocket } = await import('./websocket');
+    campaignWebSocket.shutdown();
+    
+    // Close database pool
+    const { pool } = await import('./db');
+    await pool.end();
+    
+    // Close HTTP server
+    server.close(() => {
+      log('Server shutdown complete');
+      process.exit(0);
+    });
+
+    // Force exit after 10 seconds if graceful shutdown fails
+    setTimeout(() => {
+      log('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 })();

@@ -63,13 +63,19 @@ function CampaignCard({ campaign, onSelect }: { campaign: Campaign; onSelect: (i
       active: { variant: "default" as const, color: "text-primary-foreground" },
       completed: { variant: "secondary" as const, color: "" },
       paused: { variant: "outline" as const, color: "text-warning" },
+      waiting_for_login: { variant: "destructive" as const, color: "" },
     };
     
     const config = variants[status as keyof typeof variants] || variants.draft;
     
+    // Format status text nicely
+    const statusText = status === 'waiting_for_login' 
+      ? 'Login Required' 
+      : status.charAt(0).toUpperCase() + status.slice(1);
+    
     return (
       <Badge variant={config.variant} className={config.color} data-testid={`badge-status-${campaign.id}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {statusText}
       </Badge>
     );
   };
@@ -248,6 +254,14 @@ export default function CampaignsPage() {
 
   const { data: campaigns, isLoading } = useQuery<Campaign[]>({
     queryKey: ["/api/campaigns"],
+    refetchOnMount: false, // Don't refetch on every mount
+    refetchOnWindowFocus: false, // Don't refetch when window gains focus
+    refetchInterval: (query) => {
+      // Poll every 30 seconds if any campaign is active (WebSocket handles real-time updates)
+      const data = query.state.data as Campaign[] | undefined;
+      const hasActiveCampaign = data?.some(c => c.status === 'active' || c.status === 'waiting_for_login');
+      return hasActiveCampaign ? 30000 : false;
+    },
   });
 
   return (

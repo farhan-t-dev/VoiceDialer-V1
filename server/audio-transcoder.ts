@@ -18,9 +18,62 @@ export class AudioTranscoder {
     }
   }
 
-  async transcodeToWav(inputBuffer: Buffer, sourceFormat: 'webm' | 'mp3'): Promise<string> {
+  /**
+   * Convert raw PCM audio buffer to WAV format
+   * @param pcmBuffer Int16 PCM audio data
+   * @param sampleRate Sample rate (e.g., 16000)
+   * @param channels Number of channels (1 for mono, 2 for stereo)
+   * @returns WAV file buffer
+   */
+  pcmToWav(pcmBuffer: Buffer, sampleRate: number = 16000, channels: number = 1): Buffer {
+    const dataSize = pcmBuffer.length;
+    const headerSize = 44;
+    const wavBuffer = Buffer.alloc(headerSize + dataSize);
+    
+    // WAV header
+    wavBuffer.write('RIFF', 0);
+    wavBuffer.writeUInt32LE(36 + dataSize, 4);
+    wavBuffer.write('WAVE', 8);
+    wavBuffer.write('fmt ', 12);
+    wavBuffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+    wavBuffer.writeUInt16LE(1, 20); // AudioFormat (1 for PCM)
+    wavBuffer.writeUInt16LE(channels, 22); // NumChannels
+    wavBuffer.writeUInt32LE(sampleRate, 24); // SampleRate
+    wavBuffer.writeUInt32LE(sampleRate * channels * 2, 28); // ByteRate
+    wavBuffer.writeUInt16LE(channels * 2, 32); // BlockAlign
+    wavBuffer.writeUInt16LE(16, 34); // BitsPerSample
+    wavBuffer.write('data', 36);
+    wavBuffer.writeUInt32LE(dataSize, 40);
+    
+    // Copy PCM data
+    pcmBuffer.copy(wavBuffer, headerSize);
+    
+    return wavBuffer;
+  }
+
+  /**
+   * Save raw PCM buffer as WAV file
+   */
+  async savePcmAsWav(pcmBuffer: Buffer, sampleRate: number = 16000, channels: number = 1): Promise<string> {
+    await this.ensureTempDir();
+    
+    const wavBuffer = this.pcmToWav(pcmBuffer, sampleRate, channels);
+    const outputId = randomUUID();
+    const outputPath = path.join(this.tempDir, `pcm_${outputId}.wav`);
+    
+    await fs.writeFile(outputPath, wavBuffer);
+    return outputPath;
+  }
+
+  async transcodeToWav(inputBuffer: Buffer, sourceFormat: 'webm' | 'mp3' | 'pcm'): Promise<string> {
     await this.ensureTempDir();
 
+    // PCM format doesn't need ffmpeg conversion - just add WAV header
+    if (sourceFormat === 'pcm') {
+      return await this.savePcmAsWav(inputBuffer, 16000, 1);
+    }
+
+    // For webm and mp3, use ffmpeg
     const inputId = randomUUID();
     const inputPath = path.join(this.tempDir, `input_${inputId}.${sourceFormat}`);
     const outputPath = path.join(this.tempDir, `output_${inputId}.wav`);

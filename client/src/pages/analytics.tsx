@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Phone, CheckCircle2, TrendingUp, Users, BarChart3 } from "lucide-react";
+import { ArrowLeft, Phone, CheckCircle2, TrendingUp, Users, BarChart3, Eye } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CallDetailsSheet } from "@/components/call-details-sheet";
 import type { CallHistory, Contact } from "@shared/schema";
 import { formatDate } from "@/lib/utils";
 import {
@@ -49,6 +52,9 @@ const STATUS_LABELS = {
 };
 
 export default function Analytics() {
+  const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
+  const [isDetailsSheetOpen, setIsDetailsSheetOpen] = useState(false);
+
   const { data: allCalls, isLoading: isLoadingCalls } = useQuery<CallHistory[]>({
     queryKey: ["/api/calls"],
   });
@@ -56,6 +62,11 @@ export default function Analytics() {
   const { data: contacts } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
   });
+
+  const handleViewDetails = (callId: string) => {
+    setSelectedCallId(callId);
+    setIsDetailsSheetOpen(true);
+  };
 
   const stats: CallStats = {
     totalCalls: 0,
@@ -324,9 +335,84 @@ export default function Analytics() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Call History</CardTitle>
+            <CardDescription>All calls with conversation details</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {allCalls && allCalls.length > 0 ? (
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date & Time</TableHead>
+                      <TableHead>Notes</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allCalls.map((call) => {
+                      const contact = contacts?.find(c => c.id === call.contactId);
+                      return (
+                        <TableRow key={call.id} data-testid={`row-call-${call.id}`}>
+                          <TableCell className="font-medium">
+                            {contact?.name || 'Unknown'}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {contact?.phone || '—'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={call.status === 'completed' ? 'default' : 'secondary'}
+                              data-testid={`badge-status-${call.id}`}
+                            >
+                              {call.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatDate(call.calledAt)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm max-w-xs truncate">
+                            {call.notes || '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewDetails(call.id)}
+                              data-testid={`button-view-details-${call.id}`}
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                No call history available yet
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
         )}
       </main>
+
+      <CallDetailsSheet 
+        callId={selectedCallId}
+        open={isDetailsSheetOpen}
+        onOpenChange={setIsDetailsSheetOpen}
+      />
     </div>
   );
 }

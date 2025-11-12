@@ -1,204 +1,101 @@
 # Google Voice Dialer Dashboard
 
 ## Overview
-
-A web-based contact management and automated calling platform designed for Google Voice Business integration. The application provides a comprehensive interface for managing contacts, creating bulk calling campaigns, and executing automated dialing sequences. Built with a focus on efficiency, automation, and campaign-driven outreach workflows.
+This project is a web-based contact management and automated calling platform integrated with Google Voice Business. It provides a comprehensive interface for managing contacts, creating bulk calling campaigns, and executing automated dialing sequences. The platform aims for efficiency and automation in campaign-driven outreach workflows, incorporating real-time AI conversation capabilities for dynamic interactions.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
 ### Frontend Architecture
-
-**Framework & Build System**
-- React 18+ with TypeScript for type-safe component development
-- Vite as the build tool and development server
-- Wouter for lightweight client-side routing with multiple pages:
-  - Home (/) - Dashboard overview with stats and quick actions
-  - Contacts (/contacts) - Full contact management interface with CSV import and tagging
-  - Campaigns (/campaigns) - Campaign list and creation with AI agent integration
-  - Campaign Detail (/campaigns/:id) - Individual campaign management with contact selection and bulk dialing
-  - AI Agents (/agents) - Manage AI agent profiles for automated conversations
-  - Analytics (/analytics) - Call history analytics and reporting
-  - Settings (/settings) - Configure ElevenLabs and Google Voice credentials
-
-**UI Component System**
-- Shadcn UI component library (New York variant) with Radix UI primitives
-- Tailwind CSS for styling with custom design tokens
-- Material Design principles with Linear-inspired minimalism
-- Dark mode as primary theme with light mode support via ThemeProvider context
-- Custom color system using HSL values with CSS variables for theme switching
-
-**State Management & Data Fetching**
-- TanStack Query (React Query) for server state management
-- Custom API client wrapper (`apiRequest`) for REST endpoints
-- React Hook Form with Zod validation for form state
-- Local component state for UI interactions (dialogs, selections)
-
-**Design System Decisions**
-- Typography: Inter font family for UI text, JetBrains Mono for phone numbers
-- Spacing: Tailwind's 4px-based scale (units of 2, 4, 6, 8, 12)
-- Border radius: Custom values (9px, 6px, 3px) for consistent visual language
-- Color palette optimized for productivity with vibrant blue primary actions and semantic colors for call states
+- **Framework & Build System**: React 18+ with TypeScript, Vite, and Wouter for routing.
+- **UI Component System**: Shadcn UI (New York variant) with Radix UI primitives, Tailwind CSS for styling, Material Design principles, and a dark mode primary theme.
+- **State Management & Data Fetching**: TanStack Query for server state, custom API client, and React Hook Form with Zod validation.
+- **Design System Decisions**: Inter font, 4px-based spacing, custom border radii, and a productivity-optimized color palette.
 
 ### Backend Architecture
-
-**Server Framework**
-- Express.js REST API server
-- TypeScript with ES modules
-- Custom request logging middleware tracking API response times and payload data
-
-**Data Layer**
-- Drizzle ORM for database interactions with type-safe query building
-- Schema-first design with Zod validation schemas derived from Drizzle tables
-- In-memory storage implementation (`MemStorage`) for development/testing
-- Database schema supports PostgreSQL with UUID primary keys
-
-**API Design**
-- RESTful endpoints for contacts CRUD operations (`/api/contacts`)
-- Call history tracking endpoints (`/api/calls`)
-- Campaign management endpoints (`/api/campaigns`) for creating and managing bulk calling campaigns
-- Campaign contact endpoints (`/api/campaigns/:id/contacts`) for adding contacts to campaigns
-- Bulk automated dialing endpoint (`/api/campaigns/:id/dial`) for executing campaigns
-- AI Agent CRUD endpoints (`/api/agents`) for managing conversation profiles
-- Call recording endpoints (`/api/calls/:id/recording`) for storing audio recordings
-- Conversation transcript endpoints (`/api/calls/:id/transcripts`) for AI conversation logs
-- Validation using Zod schemas at API boundaries
-- Consistent error handling with status codes and JSON error responses
-- Asynchronous background processing for bulk dialing operations
-
-**Development Workflow**
-- Hot module replacement (HMR) in development via Vite middleware
-- Separate build processes for client (Vite) and server (esbuild)
-- Type checking without emit (`noEmit: true` in tsconfig)
+- **Server Framework**: Express.js REST API server with TypeScript.
+- **Data Layer**: Drizzle ORM for type-safe database interactions with PostgreSQL, utilizing UUID primary keys.
+- **API Design**: RESTful endpoints for contacts, calls, campaigns, and AI agents, with Zod validation and consistent error handling.
+- **Development Workflow**: Hot module replacement via Vite middleware and separate build processes for client and server.
 
 ### Data Models
-
-**Contact Entity**
-- Core fields: id (UUID), name, phone (required), email, company, notes
-- Automatic timestamp tracking (createdAt)
-- Cascading delete relationship with call history
-
-**Call History Entity**
-- Links to contact via foreign key with cascade delete
-- Status tracking: completed, missed, voicemail, busy
-- Timestamp (calledAt) and optional notes per call
-- Visual indicators with color-coded icons per status type
-
-**Campaign Entity**
-- Core fields: id (UUID), name (required), description, agentId (optional), status, createdAt
-- Status states: draft, active, completed, paused
-- Links to AI Agent for automated conversation handling
-- Many-to-many relationship with contacts via junction table
-- Enables bulk calling operations with centralized management
-
-**Campaign Contacts Junction Table**
-- Links campaigns to contacts with individual call tracking
-- Per-contact status: pending, calling, completed, failed
-- Timestamp tracking (calledAt) and notes for each campaign contact
-- Cascading deletes when campaign or contact is removed
-
-**AI Agent Entity**
-- Core fields: id (UUID), name, personality, voiceId (ElevenLabs), conversationScript
-- Additional fields: greeting, objectionHandling, closingScript, isActive, createdAt
-- Defines AI behavior and conversation flow for automated calls
-- Can be assigned to campaigns for AI-powered conversations
-
-**Call Recording Entity**
-- Links to call history with recording URL and duration
-- Stores audio recordings of calls for playback and analysis
-- Cascading delete when call history is removed
-
-**Conversation Transcript Entity**
-- Links to call history with speaker (agent/contact) and message
-- Timestamp tracking for conversation flow
-- Enables transcript review and conversation analysis
-
-### External Dependencies
-
-**Third-Party UI Libraries**
-- @radix-ui/* family for accessible, unstyled primitives (dialogs, dropdowns, popovers, etc.)
-- class-variance-authority for variant-based component styling
-- cmdk for command palette functionality
-- embla-carousel-react for carousel components
-- lucide-react for consistent iconography
-
-**Database & ORM**
-- @neondatabase/serverless for PostgreSQL connection (configured but adaptable)
-- Drizzle ORM (v0.39.1) with Drizzle Kit for migrations
-- drizzle-zod for schema-to-validation integration
-
-**Form Handling**
-- react-hook-form for performant form state management
-- @hookform/resolvers for Zod schema integration
-- Validation schemas enforce required fields and format constraints
-
-**Development Tools**
-- @replit/vite-plugin-runtime-error-modal for error overlay
-- @replit/vite-plugin-cartographer and dev-banner for Replit-specific development features
-- tsx for TypeScript execution in development
-
-**Google Voice + Virtual Audio Cable + ElevenLabs Integration (PRODUCTION)**
-- **Playwright Browser Automation** (`google-voice-automation.ts`)
-  - Automated login and dialing without manual browser interaction
-  - Visible browser mode (headless: false) required for audio device access
-  - Audio device configuration via command-line arguments
-  - Requires GOOGLE_VOICE_EMAIL and GOOGLE_VOICE_PASSWORD environment variables
-  
-- **Virtual Audio Cable Audio Routing** (`audio-config.ts`, `audio-handler.ts`)
-  - Windows VPS-based audio routing between Google Voice and ElevenLabs
-  - VB-Audio Virtual Cable creates virtual audio devices for capture/playback
-  - Browser audio output → VAC → Node.js → ElevenLabs → VAC → Browser microphone input
-  - Requires VAC_INPUT_DEVICE and VAC_OUTPUT_DEVICE environment variables
-  
-- **ElevenLabs Speech-to-Speech AI** (`audio-handler.ts`)
-  - Real-time AI-powered voice conversations during calls
-  - Speech-to-speech API with agent personality and conversation scripts
-  - Voice customization using ElevenLabs voice IDs from AI agent profiles
-  - Requires ELEVENLABS_API_KEY environment variable
-  
-- **Audio Processing Pipeline**
-  - WebSocket-based audio capture from browser (MediaRecorder API)
-  - Serial queue processing prevents out-of-order audio chunks
-  - Audio transcoding: WebM (browser) + MP3 (ElevenLabs) → WAV format
-  - fluent-ffmpeg for audio conversion and concatenation
-  - Single playable WAV recording saved per call
-  - 6-second graceful shutdown window for final chunk capture
-  
-- **Call Recording & Transcripts** (`audio-transcoder.ts`)
-  - Both contact and AI audio saved to `/recordings` directory
-  - Audio chunks transcoded to WAV and concatenated in order
-  - Conversation transcripts track speaker turns with timestamps
-  - Stored in database via call_recordings and conversation_transcripts tables
-  
-- **Bulk Campaign Dialing**
-  - Sequential processing: one call at a time
-  - AI agent optional - falls back to simple dial without audio
-  - 5-minute delay between calls
-  - Audio handler lifecycle: start → capture → process → cleanup
-  - Proper resource cleanup in try-finally blocks
+- **Contact**: Stores contact information and timestamps.
+- **Call History**: Tracks call status and links to contacts.
+- **Campaign**: Manages bulk calling operations, linking to AI agents and contacts.
+- **Campaign Contacts Junction**: Links campaigns to contacts with per-contact call status.
+- **AI Agent**: Defines AI behavior, personality, voice, and conversation scripts.
+- **Call Recording**: Stores audio recordings of calls.
+- **Conversation Transcript**: Logs AI conversation messages and timestamps.
 
 ### Key Architectural Patterns
+- **Monorepo Structure**: Organized with shared types in `/shared`, client code in `/client`, and server code in `/server`.
+- **Type Safety**: End-to-end type inference and Zod schemas for validation.
+- **Styling Strategy**: CSS custom properties for theming, Tailwind utilities, and CVA for component styling.
+- **Error Handling**: Centralized error middleware, toast notifications, and query invalidation.
+- **Performance Optimization**: 
+  - WebSocket-driven cache updates using `setQueryData` to avoid unnecessary API refetches
+  - Polling intervals set to 20-30 seconds as fallback only (campaigns detail: 20s, campaigns list: 30s)
+  - Disabled `refetchOnMount` and `refetchOnWindowFocus` to prevent duplicate API calls
+  - WebSocket updates both detail and list caches for real-time synchronization across all views
+  - **Memory Leak Prevention**:
+    - Database connection pool configured with max 20 connections and 30-second idle timeout
+    - TanStack Query garbage collection set to 5 minutes to prevent infinite cache growth
+    - WebSocket stale connection cleanup every 30 seconds
+    - Graceful shutdown handlers to properly release all resources
+    - Prevents performance degradation over time (maintains consistent 2-4ms response times)
 
-**Monorepo Structure**
-- Shared types and schemas in `/shared` directory
-- Client code in `/client` with path aliases (@/, @shared)
-- Server code in `/server` with separation of routes and storage logic
+## External Dependencies
 
-**Type Safety**
-- End-to-end type inference from database schema to React components
-- Zod schemas provide runtime validation and TypeScript type generation
-- Shared types prevent client-server contract drift
+### Third-Party UI Libraries
+- **@radix-ui/**: Accessible, unstyled primitives.
+- **class-variance-authority**: Variant-based component styling.
+- **cmdk**: Command palette functionality.
+- **embla-carousel-react**: Carousel components.
+- **lucide-react**: Iconography.
 
-**Styling Strategy**
-- CSS custom properties for dynamic theming
-- Tailwind utility classes with custom configuration
-- Component-level style encapsulation with CVA (class-variance-authority)
-- Elevation system using semi-transparent overlays for hover/active states
+### Database & ORM
+- **@neondatabase/serverless**: PostgreSQL connection.
+- **Drizzle ORM**: For database interactions and migrations.
+- **drizzle-zod**: Schema-to-validation integration.
 
-**Error Handling**
-- Centralized error middleware in Express
-- Toast notifications for user-facing errors
-- Query invalidation on mutation success for cache consistency
+### Form Handling
+- **react-hook-form**: Performant form state management.
+- **@hookform/resolvers**: Zod schema integration.
+
+### Development Tools
+- **@replit/vite-plugin-runtime-error-modal**: Error overlay.
+- **@replit/vite-plugin-cartographer**: Replit-specific development features.
+- **tsx**: TypeScript execution in development.
+
+### Google Voice + Virtual Audio Cable + ElevenLabs Integration (PRODUCTION)
+- **Playwright Browser Automation**: For Google Voice login and dialing.
+  - **Manual Login System**: Removed auto-login for security. Users manually login once through browser, session persists automatically.
+  - **Robust Login Detection**: Multi-method verification using URL patterns, UI elements, and authentication cookies.
+  - **Session Persistence**: Login state saved in persistent browser profile, eliminates need for repeated logins.
+  - **Real-time Login Notifications**: 
+    - Multi-layer notification system: WebSocket (instant) + 10-second polling (reliable fallback)
+    - Global popup dialog accessible from any page in the app
+    - Toast notifications on campaign detail page
+    - Callbacks passed to `getDialer()` before browser initialization to ensure reliable triggering
+    - Campaign status automatically updates to `waiting_for_login` when login is required
+    - Clean, production-ready logging without verbose debug output
+  - **Simplified Call State Detection** (Refactored Oct 28, 2025):
+    - **Single-Signal Detection**: Uses ONE reliable signal - presence of "End call" button to determine call state
+    - **Ultra-Simple Flow**: IDLE → DIALING → (wait 3s) → check button → CONNECTED/FAILED → ENDED
+    - **No Complex Timers**: Removed all timer detection logic that was unreliable across Google Voice UI variations
+    - **Button Detection**:
+      - Waits 3 seconds after dialing to allow call to connect
+      - Checks for "End call" button with aria-label and text content matching
+      - If button exists → call CONNECTED → AI audio starts
+      - If button missing → call FAILED → no audio
+    - **Call End Detection**: While CONNECTED, polls every 500ms for button presence
+      - When button disappears → call ENDED (covers all scenarios: hangup, timeout, rejection)
+    - **AI Audio Timing**: Audio handler only starts after CONNECTED state (prevents premature AI responses)
+    - **DOM-Safe Selectors**: Pure JavaScript selectors with exact/starts-with matching (no false positives)
+- **Virtual Audio Cable Audio Routing**: Routes audio between Google Voice, Node.js, and ElevenLabs on Windows VPS.
+- **ElevenLabs Speech-to-Speech AI**: Real-time AI voice conversations.
+- **Audio Processing Pipeline**: WebSocket-based audio capture, transcoding, and concatenation using `fluent-ffmpeg`.
+- **Call Recording & Transcripts**: Saves audio and conversation logs.
+- **Bulk Campaign Dialing**: Sequential processing with 3-6 minute random delays between calls for natural pacing and robustness.

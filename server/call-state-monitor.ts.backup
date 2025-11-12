@@ -1,0 +1,656 @@
+import type { Page } from 'playwright';
+
+export enum CallState {
+  IDLE = 'idle',
+  DIALING = 'dialing',
+  RINGING = 'ringing',
+  CONNECTED = 'connected',
+  VOICEMAIL = 'voicemail',
+  ENDED = 'ended',
+  FAILED = 'failed'
+}
+
+export interface CallStateChange {
+  state: CallState;
+  timestamp: Date;
+  reason?: string;
+}
+
+export interface CallMonitorConfig {
+  dialingTimeout: number; // Max time in dialing state before abort (default: 15s)
+  ringingTimeout: number; // Max time to wait for pickup (default: 30s)
+  voicemailTimeout: number; // Time to wait after detecting voicemail prompt (default: 5s)
+  inactivityTimeout: number; // Max time without state change before abort (default: 20s)
+  maxCallDuration: number; // Maximum total call duration (default: 10 minutes)
+  hangupOnVoicemail: boolean; // If true, hang up immediately on voicemail
+  enableAudioFallback: boolean; // Use silence detection as fallback
+}
+
+const DEFAULT_CONFIG: CallMonitorConfig = {
+  dialingTimeout: 15000, // 15 seconds
+  ringingTimeout: 30000, // 30 seconds
+  voicemailTimeout: 5000, // 5 seconds
+  inactivityTimeout: 20000, // 20 seconds
+  maxCallDuration: 600000, // 10 minutes
+  hangupOnVoicemail: true,
+  enableAudioFallback: true
+};
+
+export class CallStateMonitor {
+  private page: Page;
+  private config: CallMonitorConfig;
+  private currentState: CallState = CallState.IDLE;
+  private observer: any = null;
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private ringingTimer: NodeJS.Timeout | null = null;
+  private voicemailTimer: NodeJS.Timeout | null = null;
+  private dialingTimer: NodeJS.Timeout | null = null;
+  private inactivityTimer: NodeJS.Timeout | null = null;
+  private maxDurationTimer: NodeJS.Timeout | null = null;
+  private lastStateChangeTime: number = Date.now();
+  private lastCallTimer: string = '';
+  private stateChangeCallbacks: ((change: CallStateChange) => void)[] = [];
+  private isAborting: boolean = false;
+
+  constructor(page: Page, config: Partial<CallMonitorConfig> = {}) {
+    this.page = page;
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * Start monitoring the call state
+   */
+  async startMonitoring(initialState: CallState = CallState.DIALING): Promise<void> {
+    this.currentState = initialState;
+    this.lastStateChangeTime = Date.now();
+    this.isAborting = false;
+    console.log(`[CallMonitor] Starting call state monitoring (initial state: ${initialState})`);
+
+    // Inject MutationObserver and polling logic into the browser
+    await this.injectCallStateWatcher();
+
+    // Start server-side polling as backup
+    this.startPolling();
+
+    // Start watchdog timers
+    this.startDialingTimeout();
+    this.startInactivityWatchdog();
+    this.startMaxDurationTimer();
+
+    // Set initial timeout for ringing state
+    if (initialState === CallState.DIALING || initialState === CallState.RINGING) {
+      this.startRingingTimeout();
+    }
+
+    this.emitStateChange(initialState, 'Monitoring started');
+  }
+
+  /**
+   * Stop monitoring and cleanup
+   */
+  async stopMonitoring(): Promise<void> {
+    console.log('[CallMonitor] Stopping call state monitoring');
+    
+    // Clear all timers
+    this.clearAllTimers();
+
+    // Disconnect browser observer
+    try {
+      await this.page.evaluate(() => {
+        const win = window as any;
+        if (win.callStateObserver) {
+          win.callStateObserver.disconnect();
+          delete win.callStateObserver;
+          delete win.callStateData;
+        }
+      });
+    } catch (error) {
+      // Ignore errors during cleanup
+    }
+
+    this.stateChangeCallbacks = [];
+  }
+
+  /**
+   * Clear all timers
+   */
+  private clearAllTimers(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    if (this.ringingTimer) {
+      clearTimeout(this.ringingTimer);
+      this.ringingTimer = null;
+    }
+    if (this.voicemailTimer) {
+      clearTimeout(this.voicemailTimer);
+      this.voicemailTimer = null;
+    }
+    if (this.dialingTimer) {
+      clearTimeout(this.dialingTimer);
+      this.dialingTimer = null;
+    }
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
+    if (this.maxDurationTimer) {
+      clearTimeout(this.maxDurationTimer);
+      this.maxDurationTimer = null;
+    }
+  }
+
+  /**
+   * Register callback for state changes
+   */
+  onStateChange(callback: (change: CallStateChange) => void): void {
+    this.stateChangeCallbacks.push(callback);
+  }
+
+  /**
+   * Get current call state
+   */
+  getCurrentState(): CallState {
+    return this.currentState;
+  }
+
+  /**
+   * Physically click the hangup button to end the call
+   */
+  async hangupCall(): Promise<void> {
+    try {
+      console.log('[CallMonitor] 📞 Clicking hangup button...');
+      
+      // Try multiple selectors for hangup button
+      const selectors = [
+        'button[aria-label*="End call"]',
+        'button[aria-label*="Hang up"]',
+        'button[aria-label*="end call"]',
+        'button[aria-label*="hang up"]',
+        'button.hangup-button',
+        '[gv-id="call-hangup"]'
+      ];
+
+      for (const selector of selectors) {
+        try {
+          const button = await this.page.$(selector);
+          if (button) {
+            await button.click();
+            console.log(`[CallMonitor] ✅ Clicked hangup button using selector: ${selector}`);
+            await this.page.waitForTimeout(500); // Give UI time to update
+            return;
+          }
+        } catch (err) {
+          // Try next selector
+        }
+      }
+
+      console.log('[CallMonitor] ⚠️ Could not find hangup button');
+    } catch (error) {
+      console.error('[CallMonitor] Error clicking hangup button:', error);
+    }
+  }
+
+  /**
+   * Inject call state watcher into the browser
+   */
+  private async injectCallStateWatcher(): Promise<void> {
+    const watcherScript = `
+      (function() {
+        // Storage for call state data
+        window.callStateData = {
+          lastState: 'dialing', // Start with dialing state
+          lastUpdate: Date.now(),
+          statusText: '',
+          callTimer: '',
+          hasVoicemailPrompt: false,
+          callEverStarted: false // Track if we've ever seen an active call
+        };
+
+        // Selectors to watch (comprehensive list for all scenarios)
+        const SELECTORS = {
+          // Main call UI elements
+          callPane: '[gv-id="ongoing-call-pane"]',
+          callContainer: '.call-container, .ongoing-call, [data-call-active]',
+          
+          // Status indicators
+          statusChip: '[aria-live="polite"]',
+          statusText: '.call-status, [data-call-status]',
+          
+          // Call timer (indicates active call)
+          callTimer: '.call-timer, [data-call-duration], .duration',
+          
+          // Buttons
+          hangupButton: 'button[aria-label*="End call"], button[aria-label*="Hang up"], button[aria-label*="end call"], .hangup-button',
+          
+          // Voicemail detection
+          voicemailPrompt: '[aria-label*="voicemail"], [aria-label*="Leave a message"], [aria-label*="voicemail greeting"]',
+          voicemailIndicator: '.voicemail-detected, [data-voicemail]',
+          
+          // Call banner/header
+          callBanner: '.call-desktop, .call-header, [data-call-banner]',
+          
+          // Ringing indicators
+          ringingIndicator: '[data-call-ringing], .ringing, [aria-label*="Ringing"]',
+          
+          // Connection indicators  
+          connectedIndicator: '[data-call-connected], .connected, [aria-label*="Connected"]',
+          
+          // Failure/busy indicators
+          busyIndicator: '[aria-label*="busy"], [aria-label*="unavailable"], .call-failed',
+          noAnswerIndicator: '[aria-label*="no answer"], [aria-label*="not available"]'
+        };
+
+        // Helper to extract call state from DOM
+        function detectCallState() {
+          const data = window.callStateData;
+          
+          // Check for call pane existence
+          const callPane = document.querySelector(SELECTORS.callPane);
+          
+          // Only mark as ended if we've previously seen an active call
+          // This prevents false "ended" detection during initial dial
+          if (!callPane && data.callEverStarted) {
+            data.lastState = 'ended';
+            data.lastUpdate = Date.now();
+            return;
+          } else if (!callPane) {
+            // Call pane not visible yet - keep current state (likely 'dialing')
+            // Don't change lastState or lastUpdate - just wait for UI to appear
+            console.log('[Browser] Waiting for call pane to appear (state: ' + data.lastState + ')');
+            return;
+          }
+          
+          // If we see the call pane, mark that call has started
+          data.callEverStarted = true;
+
+          // Check status text from multiple sources
+          const statusChip = document.querySelector(SELECTORS.statusChip);
+          const statusTextEl = document.querySelector(SELECTORS.statusText);
+          if (statusChip) {
+            data.statusText = statusChip.textContent?.toLowerCase() || '';
+            console.log('[Browser] Status detected: ' + data.statusText);
+          } else if (statusTextEl) {
+            data.statusText = statusTextEl.textContent?.toLowerCase() || '';
+            console.log('[Browser] Status detected: ' + data.statusText);
+          }
+          
+          // Check for busy/no answer indicators
+          const busyIndicator = document.querySelector(SELECTORS.busyIndicator);
+          const noAnswerIndicator = document.querySelector(SELECTORS.noAnswerIndicator);
+          if (busyIndicator || noAnswerIndicator) {
+            console.log('[Browser] Call failed - busy or no answer');
+            data.lastState = 'failed';
+            data.lastUpdate = Date.now();
+            return;
+          }
+
+          // Check for call timer (indicates active call)
+          const callTimer = document.querySelector(SELECTORS.callTimer);
+          if (callTimer) {
+            data.callTimer = callTimer.textContent || '';
+            if (data.callTimer.match(/\\d+:\\d+/)) {
+              data.lastState = 'connected';
+              data.lastUpdate = Date.now();
+              return;
+            }
+          }
+
+          // Check for voicemail prompt (be specific to avoid false positives)
+          const voicemailPrompt = document.querySelector(SELECTORS.voicemailPrompt);
+          const statusLower = data.statusText.toLowerCase();
+          const isVoicemail = voicemailPrompt || 
+                              statusLower.includes('leave a voicemail') || 
+                              statusLower.includes('leave a message') ||
+                              statusLower.includes('voicemail greeting');
+          
+          if (isVoicemail) {
+            data.hasVoicemailPrompt = true;
+            data.lastState = 'voicemail';
+            data.lastUpdate = Date.now();
+            return;
+          }
+
+          // Check for hangup button
+          const hangupButton = document.querySelector(SELECTORS.hangupButton);
+          if (!hangupButton) {
+            data.lastState = 'ended';
+            data.lastUpdate = Date.now();
+            return;
+          }
+
+          // Check status text for known states
+          if (data.statusText.includes('calling') || data.statusText.includes('dialing')) {
+            data.lastState = 'dialing';
+          } else if (data.statusText.includes('ringing') || data.statusText.includes('connecting')) {
+            data.lastState = 'ringing';
+          } else if (data.statusText.includes('connected') || data.statusText.includes('in call')) {
+            data.lastState = 'connected';
+          } else if (data.statusText.includes('busy') || data.statusText.includes('failed') || data.statusText.includes('unavailable')) {
+            data.lastState = 'failed';
+          } else if (hangupButton) {
+            // If hangup button exists but no clear state, assume ringing
+            data.lastState = 'ringing';
+          }
+
+          data.lastUpdate = Date.now();
+        }
+
+        // Setup MutationObserver
+        const observer = new MutationObserver(function(mutations) {
+          detectCallState();
+        });
+
+        // Observe the entire document for changes
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['aria-label', 'aria-live', 'class']
+        });
+
+        window.callStateObserver = observer;
+        
+        // Initial state detection
+        detectCallState();
+        
+        console.log('[Browser] Call state watcher initialized');
+      })();
+    `;
+
+    try {
+      await this.page.evaluate(watcherScript);
+      console.log('[CallMonitor] ✅ Call state watcher injected into browser');
+    } catch (error) {
+      console.error('[CallMonitor] ❌ Failed to inject call state watcher:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start polling the browser for call state
+   */
+  private startPolling(): void {
+    this.pollingInterval = setInterval(async () => {
+      try {
+        const stateData = await this.page.evaluate(() => {
+          const win = window as any;
+          return win.callStateData || null;
+        });
+
+        if (stateData) {
+          await this.handleStateUpdate(stateData);
+        }
+      } catch (error) {
+        console.error('[CallMonitor] Error during polling:', error);
+      }
+    }, 500); // Poll every 500ms for faster response
+  }
+
+  /**
+   * Handle state update from browser
+   */
+  private async handleStateUpdate(stateData: any): Promise<void> {
+    const detectedState = this.mapBrowserState(stateData.lastState);
+
+    // Log all state data for debugging
+    console.log(`[CallMonitor] Browser state: ${stateData.lastState}, Current: ${this.currentState}, Status: "${stateData.statusText}", Timer: "${stateData.callTimer}", CallStarted: ${stateData.callEverStarted}`);
+
+    // Reset inactivity watchdog ONLY if call timer actually changed
+    // This detects real browser activity while catching frozen/stuck states
+    const currentTimer = stateData.callTimer || '';
+    if (currentTimer !== this.lastCallTimer) {
+      this.lastCallTimer = currentTimer;
+      this.resetInactivityWatchdog();
+    }
+
+    // Only process if state changed
+    if (detectedState === this.currentState) {
+      return;
+    }
+
+    const previousState = this.currentState;
+    this.currentState = detectedState;
+
+    console.log(`[CallMonitor] 🔄 State transition: ${previousState} → ${detectedState}`);
+    console.log(`[CallMonitor] Status text: "${stateData.statusText}"`);
+
+    // Reset inactivity watchdog on any state change
+    this.resetInactivityWatchdog();
+
+    // Handle state-specific logic
+    switch (detectedState) {
+      case CallState.CONNECTED:
+        this.clearRingingTimeout();
+        // Clear dialing timer once connected
+        if (this.dialingTimer) {
+          clearTimeout(this.dialingTimer);
+          this.dialingTimer = null;
+        }
+        this.emitStateChange(detectedState, 'Call answered');
+        break;
+
+      case CallState.VOICEMAIL:
+        this.clearRingingTimeout();
+        // Clear dialing timer
+        if (this.dialingTimer) {
+          clearTimeout(this.dialingTimer);
+          this.dialingTimer = null;
+        }
+        this.emitStateChange(detectedState, 'Voicemail detected');
+        if (this.config.hangupOnVoicemail) {
+          this.startVoicemailTimeout();
+        }
+        break;
+
+      case CallState.ENDED:
+        this.clearAllTimers();
+        this.emitStateChange(detectedState, 'Call ended');
+        await this.stopMonitoring();
+        break;
+
+      case CallState.FAILED:
+        this.clearAllTimers();
+        this.emitStateChange(detectedState, 'Call failed');
+        await this.stopMonitoring();
+        break;
+
+      case CallState.RINGING:
+        // Clear dialing timer when ringing starts
+        if (this.dialingTimer) {
+          clearTimeout(this.dialingTimer);
+          this.dialingTimer = null;
+        }
+        if (previousState === CallState.DIALING) {
+          this.emitStateChange(detectedState, 'Ringing');
+        }
+        break;
+
+      default:
+        this.emitStateChange(detectedState);
+    }
+  }
+
+  /**
+   * Map browser state string to CallState enum
+   */
+  private mapBrowserState(browserState: string): CallState {
+    switch (browserState.toLowerCase()) {
+      case 'dialing':
+        return CallState.DIALING;
+      case 'ringing':
+      case 'connecting':
+        return CallState.RINGING;
+      case 'connected':
+        return CallState.CONNECTED;
+      case 'voicemail':
+        return CallState.VOICEMAIL;
+      case 'ended':
+        return CallState.ENDED;
+      case 'failed':
+        return CallState.FAILED;
+      default:
+        return this.currentState; // Keep current state if unknown
+    }
+  }
+
+  /**
+   * Start timeout for ringing state
+   */
+  private startRingingTimeout(): void {
+    this.ringingTimer = setTimeout(() => {
+      console.log(`[CallMonitor] ⏰ Ringing timeout (${this.config.ringingTimeout}ms) - no answer`);
+      this.currentState = CallState.FAILED;
+      this.emitStateChange(CallState.FAILED, 'No answer within timeout');
+      this.stopMonitoring();
+    }, this.config.ringingTimeout);
+  }
+
+  /**
+   * Clear ringing timeout
+   */
+  private clearRingingTimeout(): void {
+    if (this.ringingTimer) {
+      clearTimeout(this.ringingTimer);
+      this.ringingTimer = null;
+    }
+  }
+
+  /**
+   * Start timeout for voicemail
+   */
+  private startVoicemailTimeout(): void {
+    this.voicemailTimer = setTimeout(async () => {
+      console.log(`[CallMonitor] ⏰ Voicemail timeout - hanging up`);
+      this.currentState = CallState.ENDED;
+      this.emitStateChange(CallState.ENDED, 'Voicemail timeout - hanging up');
+      await this.hangupCall();
+      await this.stopMonitoring();
+    }, this.config.voicemailTimeout);
+  }
+
+  /**
+   * Start timeout for dialing state
+   */
+  private startDialingTimeout(): void {
+    this.dialingTimer = setTimeout(async () => {
+      if (this.currentState === CallState.DIALING && !this.isAborting) {
+        console.log(`[CallMonitor] ⏰ Dialing timeout (${this.config.dialingTimeout}ms) - call never connected`);
+        await this.forceAbort('Dialing timeout - call never connected');
+      }
+    }, this.config.dialingTimeout);
+  }
+
+  /**
+   * Start inactivity watchdog - aborts if no state change for too long
+   */
+  private startInactivityWatchdog(): void {
+    this.inactivityTimer = setTimeout(async () => {
+      const timeSinceLastChange = Date.now() - this.lastStateChangeTime;
+      if (timeSinceLastChange >= this.config.inactivityTimeout && !this.isAborting) {
+        console.log(`[CallMonitor] ⏰ Inactivity timeout (${timeSinceLastChange}ms) - no state change detected`);
+        await this.forceAbort('Inactivity timeout - system stuck');
+      }
+    }, this.config.inactivityTimeout);
+  }
+
+  /**
+   * Start maximum call duration timer
+   */
+  private startMaxDurationTimer(): void {
+    this.maxDurationTimer = setTimeout(async () => {
+      if (!this.isAborting) {
+        console.log(`[CallMonitor] ⏰ Maximum call duration (${this.config.maxCallDuration}ms) reached`);
+        await this.forceAbort('Maximum call duration exceeded');
+      }
+    }, this.config.maxCallDuration);
+  }
+
+  /**
+   * Reset inactivity watchdog on state change
+   */
+  private resetInactivityWatchdog(): void {
+    this.lastStateChangeTime = Date.now();
+    
+    // Clear and restart inactivity timer
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
+    
+    // Don't restart if aborting
+    if (!this.isAborting) {
+      this.startInactivityWatchdog();
+    }
+  }
+
+  /**
+   * Force abort the call with comprehensive cleanup
+   */
+  private async forceAbort(reason: string): Promise<void> {
+    if (this.isAborting) {
+      return; // Already aborting
+    }
+    
+    this.isAborting = true;
+    console.log(`[CallMonitor] 🚨 FORCE ABORT: ${reason}`);
+    
+    try {
+      // Try to click hangup button
+      await this.hangupCall();
+      
+      // Wait a moment for UI to update
+      await this.page.waitForTimeout(1000);
+      
+      // Check if hangup worked by looking for call UI
+      const callUIExists = await this.page.evaluate(() => {
+        const selectors = [
+          '[gv-id="ongoing-call-pane"]',
+          '.call-container',
+          '[data-call-active="true"]'
+        ];
+        return selectors.some(sel => document.querySelector(sel) !== null);
+      });
+      
+      if (callUIExists) {
+        console.log('[CallMonitor] ⚠️ Hangup button click failed - reloading page as fallback');
+        await this.page.reload();
+        await this.page.waitForTimeout(2000);
+      }
+    } catch (error) {
+      console.error('[CallMonitor] Error during force abort:', error);
+      try {
+        await this.page.reload();
+        await this.page.waitForTimeout(2000);
+      } catch (reloadError) {
+        console.error('[CallMonitor] Failed to reload page:', reloadError);
+      }
+    }
+    
+    // Emit failed state and stop monitoring
+    this.currentState = CallState.FAILED;
+    this.emitStateChange(CallState.FAILED, reason);
+    await this.stopMonitoring();
+  }
+
+  /**
+   * Emit state change to all callbacks
+   */
+  private emitStateChange(state: CallState, reason?: string): void {
+    const change: CallStateChange = {
+      state,
+      timestamp: new Date(),
+      reason
+    };
+
+    this.stateChangeCallbacks.forEach(callback => {
+      try {
+        callback(change);
+      } catch (error) {
+        console.error('[CallMonitor] Error in state change callback:', error);
+      }
+    });
+  }
+
+}

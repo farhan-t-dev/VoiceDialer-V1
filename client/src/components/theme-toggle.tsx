@@ -1,20 +1,11 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useTheme } from "./theme-provider";
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-
+  // Simple dark mode toggle - always shows dark mode icon since we're always in dark mode
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-      data-testid="button-theme-toggle"
-    >
-      <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-      <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">Toggle theme</span>
+    <Button variant="ghost" size="icon" data-testid="button-theme-toggle">
+      <Moon className="h-5 w-5" />
     </Button>
   );
 }
