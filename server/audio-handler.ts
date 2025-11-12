@@ -93,15 +93,11 @@ export class AudioStreamHandler extends EventEmitter {
     try {
       console.log('[ElevenLabs] Initializing Conversational AI client');
       
-      // Extract last name from contact name
-      const contactName = this.config.contactName || 'Unknown';
-      const nameParts = contactName.trim().split(/\s+/);
-      const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : contactName;
-      
-      // Prepare dynamic variables
+      // Prepare dynamic variables for ElevenLabs agent
+      // NOTE: Variable names must match exactly what's defined in ElevenLabs agent prompt
       const dynamicVariables: Record<string, string> = {
-        agent_name: this.config.agentName || 'AI Assistant',
-        recipientlast_name: lastName,
+        agentName: this.config.agentName || 'AI Assistant',
+        contactName: this.config.contactName || 'Unknown',
       };
       
       console.log('[ElevenLabs] Dynamic variables:', dynamicVariables);

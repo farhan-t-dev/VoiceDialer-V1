@@ -771,6 +771,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
                   // Track call state changes
                   let audioStarted = false; // Flag to ensure we only start audio once
+                  let cancelDelay: (() => void) | null = null; // Function to cancel the delay
+                  let isStillConnected = false; // Flag to track if call is still active
+                  
                   const callEndPromise = new Promise<string>((resolve) => {
                     callDetector.onStateChange(async (transition: StateTransition) => {
                       console.log(
@@ -779,6 +782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
                       if (transition.toState === "connected") {
                         callConnected = true;
+                        isStillConnected = true;
                         
                         // ✅ START AUDIO ONLY AFTER CALL CONNECTS
                         if (!audioStarted && aiAgent && aiAgent.agentId) {
@@ -790,8 +794,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
                             console.log(`[Campaign] Call connected! Waiting 8 seconds before starting AI...`);
                             console.log(`[Campaign] 🔇 Post-connection delay gives recipient time to answer and prevents AI from speaking during ringing`);
                             
-                            // Wait 8 seconds to let recipient actually answer the phone before AI starts speaking
-                            await new Promise(resolve => setTimeout(resolve, 8000));
+                            // Create a cancellable delay using Promise.race
+                            let delayTimer: NodeJS.Timeout;
+                            const delayPromise = new Promise<boolean>((delayResolve) => {
+                              delayTimer = setTimeout(() => delayResolve(true), 8000);
+                            });
+                            const cancelPromise = new Promise<boolean>((cancelResolve) => {
+                              cancelDelay = () => {
+                                clearTimeout(delayTimer);
+                                cancelResolve(false);
+                              };
+                            });
+                            
+                            // Wait for either delay to complete OR call to end
+                            const shouldContinue = await Promise.race([delayPromise, cancelPromise]);
+                            
+                            // Safety check: Only start AI if delay completed AND call is STILL connected
+                            if (!shouldContinue || !isStillConnected) {
+                              console.log(`[Campaign] ⚠️ Call ended during delay - skipping AI audio processing`);
+                              return;
+                            }
                             
                             console.log(`[Campaign] ✓ Delay complete. Starting AI audio processing...`);
                             
@@ -830,6 +852,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                         }
                       } else if (transition.toState === "ended") {
                         console.log("[Campaign] Call ended - stopping audio");
+                        
+                        // Mark call as disconnected to prevent AI from starting
+                        isStillConnected = false;
+                        
+                        // Cancel the 8-second delay if it's still waiting
+                        if (cancelDelay) {
+                          cancelDelay();
+                          console.log("[Campaign] ⚠️ Cancelled AI startup - call ended during delay");
+                        }
 
                         // IMMEDIATELY stop audio processing
                         if (audioHandler) {
@@ -840,6 +871,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                         resolve("ended");
                       } else if (transition.toState === "failed") {
                         console.log("[Campaign] Call failed - stopping audio");
+                        
+                        // Mark call as disconnected to prevent AI from starting
+                        isStillConnected = false;
+                        
+                        // Cancel the 8-second delay if it's still waiting
+                        if (cancelDelay) {
+                          cancelDelay();
+                          console.log("[Campaign] ⚠️ Cancelled AI startup - call failed during delay");
+                        }
 
                         // IMMEDIATELY stop audio processing
                         if (audioHandler) {
