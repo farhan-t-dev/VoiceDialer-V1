@@ -50,7 +50,7 @@ export class AudioStreamHandler extends EventEmitter {
   private soxPlaybackQueue: Array<{ buffer: Buffer; timestamp: number }> = []; // Queue for SoX playback
   private isSoxPlaying: boolean = false;
   private lastPlaybackTime: number = 0;
-  private playbackGateMs: number = 200; // Mute capture for 200ms after playback to prevent feedback
+  private playbackGateMs: number = 150; // Mute capture for 150ms after playback (optimized for low latency)
   private selectedAudioDevice: string | null = null; // Track which device browser is using
   private isCleaningUp: boolean = false; // Prevent writing to streams during cleanup
   private conversationEndingDetected: boolean = false; // Track when AI says goodbye
@@ -101,6 +101,11 @@ export class AudioStreamHandler extends EventEmitter {
       };
       
       console.log('[ElevenLabs] Dynamic variables:', dynamicVariables);
+      
+      // Ensure API key is provided (required for authentication)
+      if (!this.config.elevenLabsApiKey) {
+        throw new Error('ElevenLabs API key is required for Conversational AI');
+      }
       
       this.elevenLabsClient = new ElevenLabsConversationalClient({
         agentId: this.config.agentId,
@@ -330,7 +335,7 @@ export class AudioStreamHandler extends EventEmitter {
           const source = audioContext.createMediaStreamSource(stream);
           
           // Use ScriptProcessorNode for real-time audio processing
-          const bufferSize = 4096; // Process in 4096 sample chunks (~256ms at 16kHz)
+          const bufferSize = 2048; // Process in 2048 sample chunks (~128ms at 16kHz) - optimized for low latency
           const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
           
           // Store for recording and cleanup
